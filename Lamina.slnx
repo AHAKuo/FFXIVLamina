@@ -5,6 +5,7 @@
   </Folder>
   <Project Path="Glamourer.Api/Glamourer.Api.csproj" />
   <Project Path="Lamina/Lamina.csproj" />
+  <Project Path="Lamina.Tests/Lamina.Tests.csproj" />
   <Project Path="Vitrine/Vitrine.csproj" />
   <Project Path="Penumbra.Api/Penumbra.Api.csproj" />
 </Solution>

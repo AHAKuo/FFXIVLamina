@@ -75,12 +75,6 @@
           "Luna": "[1.0.0, )"
         }
       },
-      "vitrine": {
-        "type": "Project",
-        "dependencies": {
-          "Penumbra.Api": "[5.19.2, )"
-        }
-      },
       "luna": {
         "type": "Project",
         "dependencies": {
@@ -94,6 +88,13 @@
         "dependencies": {
           "Microsoft.Extensions.Logging": "[9.0.0, )",
           "System.IO.Hashing": "[9.0.8, )"
+        }
+      },
+      "vitrine": {
+        "type": "Project",
+        "dependencies": {
+          "Luna": "[1.0.0, )",
+          "Penumbra.Api": "[5.19.2, )"
         }
       }
     }
