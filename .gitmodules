@@ -1,0 +1,15 @@
+[submodule "Glamourer.Api"]
+	path = Glamourer.Api
+	url = https://github.com/Ottermandias/Glamourer.Api
+[submodule "Penumbra.Api"]
+	path = Penumbra.Api
+	url = https://github.com/Ottermandias/Penumbra.Api
+[submodule "Moodles"]
+	path = Moodles
+	url = https://github.com/kawaii/Moodles
+[submodule "Honorific"]
+	path = Honorific
+	url = https://github.com/Caraxi/Honorific
+[submodule "Luna"]
+	path = Luna
+	url = https://github.com/Ottermandias/Luna

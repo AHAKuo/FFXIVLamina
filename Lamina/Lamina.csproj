@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <Version>0.1.0.0</Version>
+    <Author>ahadev</Author>
+    <Name>Lamina</Name>
+    <Punchline>Layer Glamourer, Penumbra, Honorific and Moodles into virtual designs applied with a single redraw.</Punchline>
+    <Description>Lamina takes appearance automation further with virtual designs: layer multiple Glamourer designs, Penumbra mod states, Honorific titles and Moodles statuses through rulesets, then apply the resolved look in one pass with a single redraw.
+
+• Virtual designs combine rulesets into one final Glamourer, Penumbra, Honorific and Moodles state.
+• Switch between characters and situations in one click without flicker.
+• LazyLamina auto-organizes your Penumbra mods by what they affect and manages enable/disable/priority for you.</Description>
+    <Tags>glamourer;penumbra;honorific;moodles;appearance;design;automation;roleplay;rp;mods</Tags>
+    <RepoUrl>https://github.com/AHAKuo/FFXIVLamina</RepoUrl>
+    <IconUrl>https://raw.githubusercontent.com/AHAKuo/FFXIVLamina/main/images/icon.png</IconUrl>
+  </PropertyGroup>
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LazyLamina\LazyLamina.csproj" />
+    <ProjectReference Include="..\Glamourer.Api\Glamourer.Api.csproj" />
+    <ProjectReference Include="..\Penumbra.Api\Penumbra.Api.csproj" />
+  </ItemGroup>
+</Project>
