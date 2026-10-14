@@ -22,7 +22,7 @@
 - [ ] Ruleset editor (conditions and ordering).
 - [ ] Settings tab (per-integration enable toggles).
 
-## B) LazyLamina
+## B) Vitrine
 
 ### Data models
 - [ ] Mod catalog: Penumbra mods indexed by what each one affects (VFX, SFX, animation, gear, etc.).
@@ -34,7 +34,7 @@
 - [ ] Enable/disable/priority handling for mods used by a virtual design, with cleanup on removal.
 
 ### Frontend
-- [ ] LazyLamina menu: mods auto-organized by category, no manual Penumbra interaction needed.
+- [ ] Vitrine menu: mods auto-organized by category, no manual Penumbra interaction needed.
 - [ ] Variant/preset editor per mod.
 
 ## C) Release and register in ahadevtools

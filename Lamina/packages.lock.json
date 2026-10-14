@@ -75,7 +75,7 @@
           "Luna": "[1.0.0, )"
         }
       },
-      "lazylamina": {
+      "vitrine": {
         "type": "Project",
         "dependencies": {
           "Penumbra.Api": "[5.19.2, )"
