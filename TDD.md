@@ -179,7 +179,7 @@ Optional per pass, for Glamourer and Vitrine layers only: restricts what the pas
 - Lamina owns its collection. Before any pass, evaluation starts from a clean slate: every mod at default.
 - Physically, the clear happens in the **Applier**, in the same frame as writing the new mod state and right before the single redraw. If the new design equals the last applied one, nothing is cleared and nothing is redrawn.
 - Since the collection is reset every apply, Lamina never needs to remember which mods it turned on. Nothing stale can leak between designs.
-- **Opt out of mods:** the player unassigns their character from the Lamina collection in Penumbra. Lamina respects it and never re-assigns on its own. (This opts out of mods only; Glamourer / Honorific / Moodles still apply. The master toggle turns everything off.)
+- **Assignment is the player's job:** the player assigns their character to the Lamina collection in Penumbra. Lamina never assigns or unassigns anyone. Not assigned = mods are skipped (opt out). (This opts out of mods only; Glamourer / Honorific / Moodles still apply. The master toggle turns everything off.)
 
 ### 5.9 Evaluation walkthrough (pseudo code)
 
@@ -249,7 +249,7 @@ Pass Groups (Default, Home, Duty, ...)          ← list, first true wins
 | Evaluation direction | Top to bottom, bottom wins | Or bottom to top. |
 | Hold Glamourer state against automation | on | See [11.2](#112-glamourer). Originally "Disable Glamourer automation"; Glamourer exposes no API to switch automation off, so Lamina locks its state instead. |
 | Integrations | detected | Glamourer + Penumbra required; Honorific + Moodles optional. Live status shown. |
-| Penumbra collection | "Lamina" | Assigned to targets on first setup. If the player unassigns it, that is an opt out; Lamina never re-assigns on its own. |
+| Penumbra collection | "Lamina" | The player creates it and assigns themselves (or anyone else) to it in Penumbra. Lamina never assigns or unassigns anyone. Not assigned = mods are skipped (opt out). |
 | Default hold / linger | e.g. 0.5 s / 1 s | Per condition override possible. |
 | Redraw policy | defer when unsafe | Defer during combat, cutscenes, loading, mounted / flying, GPose. |
 | Debug overlay | off | Active group, matched passes, last apply. |
@@ -291,7 +291,7 @@ StateTracker → ConditionEvaluator → PassGroupSelector → PassCompositor
 |---|---|
 | **IPC Bridges** | `GlamourerIpc` (required), `PenumbraIpc` (required), `HonorificIpc` (optional), `MoodlesIpc` (optional), `Vitrine` (internal module behind an interface). Detect availability and API version on load and whenever plugins load / unload; layer types whose plugin is missing are disabled and flagged in Settings. |
 | **JsonStore** | Loads and saves everything as JSON. See [Persistence](#10-persistence-json). |
-| **Cleanup / Revert** | Runs on toggle off, unload, logout, profile switch: remove Lamina's Penumbra temporary settings, unassign the Lamina collection if Lamina assigned it this session, unlock and revert Glamourer state (to automation), clear the Honorific title, remove Lamina's Moodles. Then one redraw. |
+| **Cleanup / Revert** | Runs on toggle off, unload, logout, profile switch: remove Lamina's Penumbra temporary settings, unlock and revert Glamourer state (to automation), clear the Honorific title, remove Lamina's Moodles. Then one redraw. |
 | **Commands** | `/lam` open window · `/lam on` / `off` · `/lam profile <name>` · `/lam reapply` · `/lam why` (print active group, matched passes, which pass set each field). `/vit` opens Vitrine. |
 
 ### 7.3 Event sources (Dalamud)
@@ -551,8 +551,7 @@ Checked against `Penumbra.Api/` and `Glamourer.Api/` in this repo on 2026-10-14.
 | Need | API | Notes |
 |---|---|---|
 | Find the Lamina collection | `GetCollections()` / `GetCollectionsByIdentifier(name)` | No API to create a permanent collection was found, so first run asks the user to create (or pick) the "Lamina" collection in Penumbra. |
-| Assign to target (first setup) | `SetCollectionForObject(objectIndex, collectionId, allowCreateNew, ...)` | Only on first setup. |
-| Detect opt out | `GetCollectionForObject(objectIndex)` | If the effective / individual collection is not Lamina, skip mods for that target. |
+| Detect assignment / opt out | `GetCollectionForObject(objectIndex)` | If the effective collection is not Lamina, skip mods for that target. Lamina never calls `SetCollectionForObject`. |
 | Write mod state | `SetTemporaryModSettings(collectionId, modDirectory, modName, inherit, enabled, priority, options, source, key)` | `source` = "Lamina". `options` = group name → enabled options. |
 | **Clean slate in one call** | `RemoveAllTemporaryModSettings(collectionId, key)` | ✅ Verified. Use a **negative key**: an identification lock that lets the user still edit, but lets Lamina remove only its own settings. |
 | Redraw | `RedrawObject(objectIndex, RedrawType)` | One per apply, scheduled. `GameObjectRedrawn` event available. |
