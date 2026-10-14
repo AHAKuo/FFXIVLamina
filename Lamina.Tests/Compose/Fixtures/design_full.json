@@ -1,0 +1,459 @@
+{
+	"FileVersion": 3,
+	"Identifier": "ad740f34-90b8-4818-a33c-e4cf12be58c8",
+	"CreationDate": 1791939565558,
+	"LastEdit": 1791939716798,
+	"Name": "Outfit - Loose Song",
+	"FileSystemFolder": "3. Wardrobe",
+	"Equipment": {
+		"MainHand": {
+			"ItemId": 16054,
+			"Apply": true,
+			"ApplyStain": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"OffHand": {
+			"ItemId": 16054,
+			"Apply": true,
+			"ApplyStain": true,
+			"ApplyCrest": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"Head": {
+			"ItemId": 4294967164,
+			"Apply": true,
+			"ApplyStain": true,
+			"ApplyCrest": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"Body": {
+			"ItemId": 15925,
+			"Apply": true,
+			"ApplyStain": true,
+			"ApplyCrest": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"Hands": {
+			"ItemId": 17483,
+			"Apply": true,
+			"ApplyStain": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"Legs": {
+			"ItemId": 9075,
+			"Apply": true,
+			"ApplyStain": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"Feet": {
+			"ItemId": 10789,
+			"Apply": true,
+			"ApplyStain": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"Ears": {
+			"ItemId": 4294967158,
+			"Apply": true,
+			"ApplyStain": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"Neck": {
+			"ItemId": 4294967157,
+			"Apply": true,
+			"ApplyStain": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"Wrists": {
+			"ItemId": 4294967156,
+			"Apply": true,
+			"ApplyStain": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"RFinger": {
+			"ItemId": 4294967155,
+			"Apply": true,
+			"ApplyStain": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"LFinger": {
+			"ItemId": 4294967155,
+			"Apply": true,
+			"ApplyStain": true,
+			"Stain": 0,
+			"Stain2": 0
+		},
+		"Hat": {
+			"Show": false,
+			"Apply": true
+		},
+		"VieraEars": {
+			"Show": true,
+			"Apply": true
+		},
+		"Visor": {
+			"IsToggled": false,
+			"Apply": true
+		},
+		"Weapon": {
+			"Show": false,
+			"Apply": true
+		}
+	},
+	"Bonus": {
+		"Glasses": {
+			"BonusId": 844424946909184,
+			"Apply": true
+		}
+	},
+	"Customize": {
+		"Race": {
+			"Value": 4
+		},
+		"Gender": {
+			"Value": 1
+		},
+		"BodyType": {
+			"Value": 1,
+			"Apply": true
+		},
+		"Height": {
+			"Value": 0
+		},
+		"Clan": {
+			"Value": 7
+		},
+		"Face": {
+			"Value": 2
+		},
+		"Hairstyle": {
+			"Value": 195
+		},
+		"Highlights": {
+			"Value": 128
+		},
+		"SkinColor": {
+			"Value": 184
+		},
+		"EyeColorRight": {
+			"Value": 65
+		},
+		"HairColor": {
+			"Value": 60
+		},
+		"HighlightsColor": {
+			"Value": 48
+		},
+		"FacialFeature1": {
+			"Value": 0
+		},
+		"FacialFeature2": {
+			"Value": 0
+		},
+		"FacialFeature3": {
+			"Value": 0
+		},
+		"FacialFeature4": {
+			"Value": 0
+		},
+		"FacialFeature5": {
+			"Value": 0
+		},
+		"FacialFeature6": {
+			"Value": 0
+		},
+		"FacialFeature7": {
+			"Value": 0
+		},
+		"LegacyTattoo": {
+			"Value": 0
+		},
+		"TattooColor": {
+			"Value": 100
+		},
+		"Eyebrows": {
+			"Value": 1
+		},
+		"EyeColorLeft": {
+			"Value": 65
+		},
+		"EyeShape": {
+			"Value": 2
+		},
+		"SmallIris": {
+			"Value": 0
+		},
+		"Nose": {
+			"Value": 0
+		},
+		"Jaw": {
+			"Value": 2
+		},
+		"Mouth": {
+			"Value": 0
+		},
+		"Lipstick": {
+			"Value": 128
+		},
+		"LipColor": {
+			"Value": 43
+		},
+		"MuscleMass": {
+			"Value": 0
+		},
+		"TailShape": {
+			"Value": 3
+		},
+		"BustSize": {
+			"Value": 100
+		},
+		"FacePaint": {
+			"Value": 2
+		},
+		"FacePaintReversed": {
+			"Value": 0
+		},
+		"FacePaintColor": {
+			"Value": 7
+		},
+		"Wetness": {
+			"Value": false
+		}
+	},
+	"Parameters": {
+		"FacePaintUvMultiplier": {
+			"Value": 1
+		},
+		"FacePaintUvOffset": {
+			"Value": 0
+		},
+		"MuscleTone": {
+			"Percentage": 1
+		},
+		"LeftLimbalIntensity": {
+			"Percentage": 0
+		},
+		"RightLimbalIntensity": {
+			"Percentage": 0
+		},
+		"SkinDiffuse": {
+			"Red": 0.89411765,
+			"Green": 0.8627451,
+			"Blue": 0.84705883
+		},
+		"HairDiffuse": {
+			"Red": 0.6745098,
+			"Green": 0.49411765,
+			"Blue": 0.2784314
+		},
+		"HairHighlight": {
+			"Red": 0.9411765,
+			"Green": 0.8509804,
+			"Blue": 0.70980394
+		},
+		"LeftEye": {
+			"Red": 0.85882354,
+			"Green": 0.6431373,
+			"Blue": 0.46666667
+		},
+		"RightEye": {
+			"Red": 0.85882354,
+			"Green": 0.6431373,
+			"Blue": 0.46666667
+		},
+		"FeatureColor": {
+			"Red": 0.42745098,
+			"Green": 0.09411765,
+			"Blue": 0.1764706
+		},
+		"LipDiffuse": {
+			"Red": 0.38039216,
+			"Green": 0.15686275,
+			"Blue": 0.15294118,
+			"Alpha": 0.6
+		},
+		"DecalColor": {
+			"Red": 0,
+			"Green": 0,
+			"Blue": 0,
+			"Alpha": 0.92941177
+		}
+	},
+	"Mods": [
+		{
+			"Name": "Wildkini",
+			"Directory": "Wildkini",
+			"Version": 1,
+			"State": "Enabled",
+			"Priority": 0,
+			"Settings": [
+				{
+					"Identifier": "da2834e7-db14-44ec-9187-132ad2d34a1d",
+					"Name": "Wildkini",
+					"Options": [
+						{
+							"Identifier": "53431c06-7545-46d9-8593-fa1a12d960de",
+							"Name": "Default Eve Chest",
+							"State": "Disabled"
+						},
+						{
+							"Identifier": "3412eda7-fb03-486e-938d-c190d4222cf1",
+							"Name": "Default Eve Chest + Bulge",
+							"State": "Disabled"
+						},
+						{
+							"Identifier": "1e8d4127-ca14-4ef2-abb1-11ae5a869741",
+							"Name": "Milky Eve Chest",
+							"State": "Enabled"
+						},
+						{
+							"Identifier": "c86391d5-3be8-4dc4-b6c7-8c55425457b3",
+							"Name": "Milky Eve Chest + Bulge",
+							"State": "Disabled"
+						}
+					]
+				},
+				{
+					"Identifier": "df17a223-f084-484b-9dc5-94d95dcad8d8",
+					"Name": "Texture Option",
+					"Options": [
+						{
+							"Identifier": "7e7acbba-8d4a-48a5-8dff-db24adf58cfb",
+							"Name": "\"Wild\" - Tiger Stripes",
+							"State": "Disabled"
+						},
+						{
+							"Identifier": "89f5e83b-8fcf-4814-8b83-6e0864457970",
+							"Name": "Plain",
+							"State": "Disabled"
+						},
+						{
+							"Identifier": "32d59cb8-c181-4357-b9a2-40bce7ff50cb",
+							"Name": "Striped",
+							"State": "Disabled"
+						},
+						{
+							"Identifier": "9f0376a0-a61f-4e3d-83dc-a9346cbcf3ec",
+							"Name": "Vulnerable",
+							"State": "Enabled"
+						}
+					]
+				},
+				{
+					"Identifier": "76685041-3db2-491a-89fc-2b2b006165f2",
+					"Name": "Extra",
+					"Options": [
+						{
+							"Identifier": "076aad34-535d-42ee-8f1d-9d8b9228394e",
+							"Name": "See-Through",
+							"State": "Enabled"
+						},
+						{
+							"Identifier": "43bb1ed6-0d23-46aa-9173-426988383979",
+							"Name": "Latex Shine",
+							"State": "Disabled"
+						},
+						{
+							"Identifier": "0e5061fa-85dc-43a7-921e-04cc9ffe1f2e",
+							"Name": "Metallic Dyes",
+							"State": "Disabled"
+						},
+						{
+							"Identifier": "f77d630c-b74a-44f4-b5e8-b5852c5cadcf",
+							"Name": "Gay",
+							"State": "Enabled"
+						}
+					]
+				}
+			]
+		},
+		{
+			"Name": "Winter Soldier",
+			"Directory": "Winter Soldier",
+			"Version": 1,
+			"State": "Enabled",
+			"Priority": 0,
+			"Settings": [
+				{
+					"Identifier": "23320492-03fa-4ff7-9f33-d0e5d2efd198",
+					"Name": "Core Files",
+					"Options": [
+						{
+							"Identifier": "a5a93e1c-716d-4525-a2b0-5fa231c342ce",
+							"Name": "Core Files",
+							"State": "Enabled"
+						}
+					]
+				},
+				{
+					"Identifier": "f49800ed-880b-41a3-a337-e734ce7b4382",
+					"Name": "Winter Soldier Bikini Sweater",
+					"Options": [
+						{
+							"Identifier": "cf1e09dc-0abe-4f1f-85ab-c6a97365d8ae",
+							"Name": "Don't Install",
+							"State": "Enabled"
+						},
+						{
+							"Identifier": "52749600-a353-44b1-ab05-90da84e3afc3",
+							"Name": "Default Eve Chest",
+							"State": "Disabled"
+						},
+						{
+							"Identifier": "f1004a38-ef7e-42c8-9e64-9e270c7c6809",
+							"Name": "Milky Chest",
+							"State": "Disabled"
+						}
+					]
+				},
+				{
+					"Identifier": "3af12e71-9dfc-492a-8119-45a9b3886153",
+					"Name": "Winter Soldier Micro Skirt",
+					"Options": [
+						{
+							"Identifier": "5999acd0-4b6e-40d1-82e5-dab1d429fe0c",
+							"Name": "Don't Install",
+							"State": "Enabled"
+						},
+						{
+							"Identifier": "1779a2c6-e2e2-4404-9768-c3536c7efd29",
+							"Name": "Default Eve Legs",
+							"State": "Disabled"
+						},
+						{
+							"Identifier": "020a6c78-4194-4095-a106-c309817f41e0",
+							"Name": "Futa Legs (No Balls)",
+							"State": "Disabled"
+						}
+					]
+				},
+				{
+					"Identifier": "d531f649-a394-415c-8640-5e0611b1f029",
+					"Name": "Winter Soldier Kneeboots",
+					"Options": [
+						{
+							"Identifier": "b01816da-0743-432b-a9be-a709fee6ec4e",
+							"Name": "Don't Install",
+							"State": "Disabled"
+						},
+						{
+							"Identifier": "26a40280-3346-4ea0-90dc-cbd5595fe873",
+							"Name": "Install",
+							"State": "Enabled"
+						}
+					]
+				}
+			]
+		}
+	]
+}
