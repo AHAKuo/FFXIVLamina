@@ -1,8 +1,10 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility.Raii;
 using Lamina.Models;
+using Lamina.Runtime.State;
 using Penumbra.Api.Enums;
 
 namespace Lamina.UI;
@@ -13,6 +15,15 @@ internal sealed class LayerEditor
     private readonly LaminaServices _s;
     private readonly UiCaches _caches;
     private static readonly string[] ModToggleNames = { "Enable", "Disable" };
+    private static readonly string[] GenderNames = { "Male", "Female" };
+    private static readonly EquipSlot[] CrestSlots = { EquipSlot.Head, EquipSlot.Body, EquipSlot.OffHand };
+    private static readonly (MetaIndex Index, string Label, string On, string Off)[] VisibilityToggles =
+    {
+        (MetaIndex.HatVisible,       "Hat",        "Shown",       "Hidden"),
+        (MetaIndex.VisorToggled,     "Visor",      "Toggled",     "Not toggled"),
+        (MetaIndex.WeaponVisible,    "Weapon",     "Shown",       "Hidden"),
+        (MetaIndex.VieraEarsVisible, "Viera ears", "Shown",       "Hidden"),
+    };
 
     public LayerEditor(LaminaServices services, UiCaches caches)
     {
@@ -104,6 +115,8 @@ internal sealed class LayerEditor
         => kind switch
         {
             GlamourerLayer.KindName      => (_s.Glamourer.Available, "Glamourer is not loaded."),
+            EquipmentLayer.KindName      => (_s.Glamourer.Available, "Glamourer is not loaded."),
+            AppearanceLayer.KindName     => (_s.Glamourer.Available, "Glamourer is not loaded."),
             PenumbraAdjustLayer.KindName => (_s.Penumbra.Available, "Penumbra is not loaded."),
             VitrineDesignLayer.KindName  => (_s.Vitrine.Available, "Vitrine is not installed (separate plugin)."),
             HonorificLayer.KindName      => (_s.Honorific.Available, "Honorific is not loaded."),
@@ -114,13 +127,41 @@ internal sealed class LayerEditor
     private string Summary(Layer layer)
         => layer switch
         {
-            GlamourerLayer g     => _caches.DesignName(g.DesignId),
-            VitrineDesignLayer v => _caches.VitrineDesignName(v.VitrineDesignId),
+            GlamourerLayer g      => _caches.DesignName(g.DesignId),
+            VitrineDesignLayer v  => _caches.VitrineDesignName(v.VitrineDesignId),
             PenumbraAdjustLayer p => $"{p.Mods.Count} mod(s)",
-            HonorificLayer h     => h.Clear ? "clear title" : string.IsNullOrEmpty(h.Title) ? "(no title)" : h.Title,
-            MoodlesLayer m       => $"+{m.Add.Count + m.AddPresets.Count} / −{m.Remove.Count}",
-            _                    => layer.Describe(),
+            EquipmentLayer e      => EquipmentSummary(e),
+            AppearanceLayer a     => AppearanceSummary(a),
+            HonorificLayer h      => h.Clear ? "clear title" : string.IsNullOrEmpty(h.Title) ? "(no title)" : h.Title,
+            MoodlesLayer m        => $"+{m.Add.Count + m.AddPresets.Count} / −{m.Remove.Count}",
+            _                     => layer.Describe(),
         };
+
+    private string EquipmentSummary(EquipmentLayer e)
+    {
+        var parts = new List<string>();
+        foreach (var (slot, edit) in e.Slots.OrderBy(kv => kv.Key))
+        {
+            if (edit.ItemId is { } item)
+                parts.Add($"{Widgets.Humanize(slot.ToString())}: {_s.Catalog.ItemName(item)}");
+            else if (edit.ApplyStains)
+                parts.Add($"{Widgets.Humanize(slot.ToString())}: dyes");
+            else if (edit.Crest is { } crest)
+                parts.Add($"{Widgets.Humanize(slot.ToString())}: crest {(crest ? "on" : "off")}");
+        }
+        foreach (var (index, on) in e.Meta)
+            parts.Add($"{Widgets.Humanize(index.ToString())} {(on ? "on" : "off")}");
+        return parts.Count == 0 ? "(nothing set)" : Widgets.Truncate(string.Join(", ", parts), 70);
+    }
+
+    private static string AppearanceSummary(AppearanceLayer a)
+    {
+        var parts = a.Customize.Keys.OrderBy(k => k).Select(AppearanceCatalog.LabelOf).ToList();
+        if (a.Wetness is { } wet)
+            parts.Add($"wetness {(wet ? "on" : "off")}");
+        parts.AddRange(a.Parameters.Keys.Select(k => AdvancedParameters.All.FirstOrDefault(p => p.Key == k).DisplayName ?? k));
+        return parts.Count == 0 ? "(nothing set)" : Widgets.Truncate(string.Join(", ", parts), 70);
+    }
 
     private bool DrawLayerFields(Layer layer)
         => layer switch
@@ -128,11 +169,15 @@ internal sealed class LayerEditor
             GlamourerLayer g      => DrawGlamourer(g),
             VitrineDesignLayer v  => DrawVitrine(v),
             PenumbraAdjustLayer p => DrawPenumbraAdjust(p),
+            EquipmentLayer e      => DrawEquipment(e),
+            AppearanceLayer a     => DrawAppearance(a),
             HonorificLayer h      => DrawHonorific(h),
             MoodlesLayer m        => DrawMoodles(m),
             UnknownLayer u        => DrawUnknown(u),
             _                     => false,
         };
+
+    // ---- Glamourer / Vitrine ------------------------------------------------------------------------
 
     private bool DrawGlamourer(GlamourerLayer g)
     {
@@ -189,13 +234,16 @@ internal sealed class LayerEditor
             changed            = true;
         }
         Widgets.Tooltip("Replaces whole option groups of the design's settings for this pass only.");
-        if (v.SettingsOverride is { } overrides && DrawSettingsEditor("vitset", available, overrides))
+        if (v.SettingsOverride is { } overrides && DrawSettingsEditor("vitset", available, overrides, null))
             changed = true;
         return changed;
     }
 
+    // ---- Penumbra Adjust ----------------------------------------------------------------------------
+
     private bool DrawPenumbraAdjust(PenumbraAdjustLayer p)
     {
+        Widgets.Hint("Each part has an \"applies\" checkbox: unticked parts are inherited from an earlier pass, else from the Lamina collection.");
         var changed  = false;
         var removeAt = -1;
         using (var table = ImRaii.Table("##mods", 4, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH))
@@ -203,8 +251,8 @@ internal sealed class LayerEditor
             if (table)
             {
                 ImGui.TableSetupColumn("Mod", ImGuiTableColumnFlags.WidthStretch, 3f);
-                ImGui.TableSetupColumn("State", ImGuiTableColumnFlags.WidthFixed, 90 * Widgets.Scale);
-                ImGui.TableSetupColumn("Priority", ImGuiTableColumnFlags.WidthFixed, 90 * Widgets.Scale);
+                ImGui.TableSetupColumn("State", ImGuiTableColumnFlags.WidthFixed, 120 * Widgets.Scale);
+                ImGui.TableSetupColumn("Priority", ImGuiTableColumnFlags.WidthFixed, 110 * Widgets.Scale);
                 ImGui.TableSetupColumn("##x", ImGuiTableColumnFlags.WidthFixed, 30 * Widgets.Scale);
                 ImGui.TableHeadersRow();
                 for (var i = 0; i < p.Mods.Count; i++)
@@ -219,28 +267,52 @@ internal sealed class LayerEditor
                     {
                         m.ModDirectory = dir;
                         m.ModName      = _caches.ModName(dir);
-                        m.Settings     = null;
-                        changed        = true;
+                        PrefillFromPenumbra(m, allGroups: true);
+                        changed = true;
                     }
                     if (!known && !string.IsNullOrEmpty(m.ModDirectory))
                         Widgets.Tooltip(_s.Penumbra.Available ? "This mod is not installed any more; it is skipped." : "Penumbra is not loaded.");
 
+                    var current = string.IsNullOrEmpty(m.ModDirectory) ? null : _caches.CurrentModSettings(m.ModDirectory);
+
                     ImGui.TableNextColumn();
-                    var state = (int)m.State;
-                    ImGui.SetNextItemWidth(-1);
-                    if (ImGui.Combo("##state", ref state, ModToggleNames, ModToggleNames.Length))
+                    var stateSet = m.State is not null;
+                    if (ImGui.Checkbox("##stateSet", ref stateSet))
                     {
-                        m.State = (ModToggle)state;
+                        m.State = stateSet ? ModToggle.Enable : null;
                         changed = true;
+                    }
+                    Widgets.Tooltip(stateSet ? "This layer sets whether the mod is enabled." : $"Inherited ({(current?.Enabled == true ? "enabled" : "disabled")} in the collection).");
+                    ImGui.SameLine();
+                    using (ImRaii.Disabled(!stateSet))
+                    {
+                        var state = (int)(m.State ?? (current?.Enabled == true ? ModToggle.Enable : ModToggle.Disable));
+                        ImGui.SetNextItemWidth(-1);
+                        if (ImGui.Combo("##state", ref state, ModToggleNames, ModToggleNames.Length) && stateSet)
+                        {
+                            m.State = (ModToggle)state;
+                            changed = true;
+                        }
                     }
 
                     ImGui.TableNextColumn();
-                    var prio = m.Priority ?? 0;
-                    ImGui.SetNextItemWidth(-1);
-                    if (ImGui.InputInt("##prio", ref prio, 0, 0))
+                    var prioSet = m.Priority is not null;
+                    if (ImGui.Checkbox("##prioSet", ref prioSet))
                     {
-                        m.Priority = prio;
+                        m.Priority = prioSet ? current?.Priority ?? 0 : null;
                         changed    = true;
+                    }
+                    Widgets.Tooltip(prioSet ? "This layer sets the priority." : $"Inherited ({current?.Priority ?? 0} in the collection).");
+                    ImGui.SameLine();
+                    using (ImRaii.Disabled(!prioSet))
+                    {
+                        var prio = m.Priority ?? current?.Priority ?? 0;
+                        ImGui.SetNextItemWidth(-1);
+                        if (ImGui.InputInt("##prio", ref prio, 0, 0) && prioSet)
+                        {
+                            m.Priority = prio;
+                            changed    = true;
+                        }
                     }
 
                     ImGui.TableNextColumn();
@@ -248,21 +320,39 @@ internal sealed class LayerEditor
                         removeAt = i;
 
                     var available = string.IsNullOrEmpty(m.ModDirectory) ? null : _caches.ModSettings(m.ModDirectory);
-                    if (available is { Count: > 0 } && m.State == ModToggle.Enable)
+                    if (available is { Count: > 0 })
                     {
                         ImGui.TableNextRow();
                         ImGui.TableNextColumn();
-                        using var node = ImRaii.TreeNode(m.Settings is null ? "Settings (mod defaults)###set" : $"Settings ({m.Settings.Count} group(s) set)###set");
+                        var setCount = m.Settings?.Count(kv => available.ContainsKey(kv.Key)) ?? 0;
+                        using var node = ImRaii.TreeNode($"Settings ({setCount} of {available.Count} group(s) set)###set");
                         if (node)
                         {
-                            var custom = m.Settings is not null;
-                            if (ImGui.Checkbox("Custom settings##ps", ref custom))
+                            if (ImGui.SmallButton("Apply all##ps"))
                             {
-                                m.Settings = custom ? new Dictionary<string, List<string>>() : null;
+                                PrefillFromPenumbra(m, allGroups: true, keepExisting: true);
+                                changed = true;
+                            }
+                            Widgets.Tooltip("Tick every option group, prefilled with the collection's current value.");
+                            ImGui.SameLine();
+                            if (ImGui.SmallButton("Disable all##ps"))
+                            {
+                                m.Settings = null;
                                 changed    = true;
                             }
-                            if (m.Settings is { } settings && DrawSettingsEditor("pset", available, settings))
+                            Widgets.Tooltip("Untick every option group: all of them are inherited.");
+                            ImGui.SameLine();
+                            if (ImGui.SmallButton("Reset to Penumbra##ps"))
+                            {
+                                PrefillFromPenumbra(m, allGroups: false);
                                 changed = true;
+                            }
+                            Widgets.Tooltip("Sets the ticked groups back to the collection's current values (Penumbra's defaults when the mod is not configured there).");
+                            m.Settings ??= new Dictionary<string, List<string>>();
+                            if (DrawSettingsEditor("pset", available, m.Settings, current?.Settings))
+                                changed = true;
+                            if (m.Settings.Count == 0)
+                                m.Settings = null;
                         }
                     }
                 }
@@ -278,11 +368,57 @@ internal sealed class LayerEditor
             p.Mods.Add(new ModState());
             changed = true;
         }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Re-read collection"))
+            _caches.ForgetCurrentModSettings();
+        Widgets.Tooltip("Refreshes the inherited values shown here after you changed the mod in Penumbra.");
         return changed;
     }
 
-    /// <summary> Option group → selected options editor built from Penumbra's available settings. </summary>
-    private static bool DrawSettingsEditor(string id, IReadOnlyDictionary<string, (string[] Options, GroupType Type)> available, Dictionary<string, List<string>> settings)
+    /// <summary>
+    /// Fills a mod entry from the collection's current settings (Penumbra's defaults when the mod is not configured there):
+    /// enabled, priority and, with <paramref name="allGroups"/>, every option group ticked. Without it only already ticked
+    /// groups are reset. <paramref name="keepExisting"/> leaves ticked groups' values alone and only adds the missing ones.
+    /// </summary>
+    private void PrefillFromPenumbra(ModState m, bool allGroups, bool keepExisting = false)
+    {
+        var available = _caches.ModSettings(m.ModDirectory);
+        var current   = _caches.CurrentModSettings(m.ModDirectory);
+        if (!keepExisting || m.State is null)
+            m.State = ModToggle.Enable;
+        if (!keepExisting || m.Priority is null)
+            m.Priority = current?.Priority ?? 0;
+        if (available is null)
+            return;
+
+        var settings = m.Settings ?? new Dictionary<string, List<string>>();
+        foreach (var (group, (options, type)) in available)
+        {
+            var ticked = settings.ContainsKey(group);
+            if (!allGroups && !ticked)
+                continue;
+            if (keepExisting && ticked)
+                continue;
+            settings[group] = DefaultOptions(group, options, type, current?.Settings);
+        }
+
+        m.Settings = settings.Count == 0 ? null : settings;
+    }
+
+    /// <summary> The collection's current options for a group, else Penumbra's default (first option of a single-select group, nothing for multi-select). </summary>
+    private static List<string> DefaultOptions(string group, string[] options, GroupType type, IReadOnlyDictionary<string, IReadOnlyList<string>>? current)
+    {
+        if (current is not null && current.TryGetValue(group, out var selected))
+            return selected.Where(options.Contains).ToList();
+        return type == GroupType.Single && options.Length > 0 ? new List<string> { options[0] } : new List<string>();
+    }
+
+    /// <summary>
+    /// Option group → selected options editor built from Penumbra's available settings. Every group has an "applies"
+    /// checkbox; unticked groups show the inherited value dimmed when <paramref name="inherited"/> is known.
+    /// </summary>
+    private static bool DrawSettingsEditor(string id, IReadOnlyDictionary<string, (string[] Options, GroupType Type)> available,
+        Dictionary<string, List<string>> settings, IReadOnlyDictionary<string, IReadOnlyList<string>>? inherited)
     {
         var changed = false;
         using var scope = ImRaii.PushId(id);
@@ -293,18 +429,25 @@ internal sealed class LayerEditor
             if (ImGui.Checkbox("##set", ref isSet))
             {
                 if (isSet)
-                    settings[group] = new List<string>();
+                    settings[group] = DefaultOptions(group, options, type, inherited);
                 else
                     settings.Remove(group);
                 changed = true;
             }
-            Widgets.Tooltip(isSet ? "This group is set by Lamina" : "Unchecked: the mod's own setting for this group is kept");
+            Widgets.Tooltip(isSet ? "This group is set by this layer" : "Unticked: the group is inherited (earlier pass, else the collection)");
             ImGui.SameLine();
             ImGui.TextUnformatted(group);
             ImGui.SameLine();
             Widgets.Hint($"[{Widgets.Humanize(type.ToString())}]");
             if (!isSet || selected is null)
+            {
+                if (inherited is not null && inherited.TryGetValue(group, out var inheritedOptions))
+                {
+                    ImGui.SameLine();
+                    Widgets.Hint($"inherits: {(inheritedOptions.Count == 0 ? "(none)" : string.Join(", ", inheritedOptions))}");
+                }
                 continue;
+            }
 
             using var indent = ImRaii.PushIndent(20f * Widgets.Scale);
             var single = type == GroupType.Single;
@@ -331,6 +474,521 @@ internal sealed class LayerEditor
         }
         return changed;
     }
+
+    // ---- Equipment Changes --------------------------------------------------------------------------
+
+    private bool DrawEquipment(EquipmentLayer e)
+    {
+        var changed = false;
+        EquipSlot? removeSlot = null;
+        using (var table = ImRaii.Table("##slots", 5, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH))
+        {
+            if (table)
+            {
+                ImGui.TableSetupColumn("Slot", ImGuiTableColumnFlags.WidthFixed, 80 * Widgets.Scale);
+                ImGui.TableSetupColumn("Item", ImGuiTableColumnFlags.WidthStretch, 3f);
+                ImGui.TableSetupColumn("Dyes", ImGuiTableColumnFlags.WidthStretch, 2.4f);
+                ImGui.TableSetupColumn("Crest", ImGuiTableColumnFlags.WidthFixed, 110 * Widgets.Scale);
+                ImGui.TableSetupColumn("##x", ImGuiTableColumnFlags.WidthFixed, 30 * Widgets.Scale);
+                ImGui.TableHeadersRow();
+
+                foreach (var slot in Enum.GetValues<EquipSlot>())
+                {
+                    if (!e.Slots.TryGetValue(slot, out var edit))
+                        continue;
+                    using var id = ImRaii.PushId((int)slot);
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted(Widgets.Humanize(slot.ToString()));
+
+                    ImGui.TableNextColumn();
+                    var itemSet = edit.ItemId is not null;
+                    if (ImGui.Checkbox("##itemSet", ref itemSet))
+                    {
+                        edit.ItemId = itemSet ? NothingItems.IdFor(slot) ?? 0 : null;
+                        changed     = true;
+                    }
+                    Widgets.Tooltip(itemSet ? "This layer sets the item." : "Unticked: the item in the slot is kept.");
+                    ImGui.SameLine();
+                    using (ImRaii.Disabled(!itemSet))
+                    {
+                        var preview = edit.ItemId is { } current ? _s.Catalog.ItemName(current) : "(keep)";
+                        if (Widgets.SearchCombo("##item", preview, _caches.ItemsFor(slot), out var picked, 240) && itemSet)
+                        {
+                            edit.ItemId = picked;
+                            changed     = true;
+                        }
+                    }
+
+                    ImGui.TableNextColumn();
+                    var dyesSet = edit.ApplyStains;
+                    if (ImGui.Checkbox("##dyesSet", ref dyesSet))
+                    {
+                        edit.ApplyStains = dyesSet;
+                        changed          = true;
+                    }
+                    Widgets.Tooltip(dyesSet ? "This layer sets both dyes (on the item above, or on whatever is in the slot)." : "Unticked: dyes are kept.");
+                    ImGui.SameLine();
+                    using (ImRaii.Disabled(!dyesSet))
+                    {
+                        var s1 = edit.Stain1;
+                        if (StainCombo("##s1", ref s1) && dyesSet) { edit.Stain1 = s1; changed = true; }
+                        ImGui.SameLine(0, 4);
+                        var s2 = edit.Stain2;
+                        if (StainCombo("##s2", ref s2) && dyesSet) { edit.Stain2 = s2; changed = true; }
+                    }
+
+                    ImGui.TableNextColumn();
+                    if (CrestSlots.Contains(slot))
+                    {
+                        var crest = edit.Crest;
+                        ImGui.SetNextItemWidth(-1);
+                        if (Widgets.TriState("##crest", ref crest, "Keep"))
+                        {
+                            edit.Crest = crest;
+                            changed    = true;
+                        }
+                        Widgets.Tooltip("Free company crest on the piece.");
+                    }
+
+                    ImGui.TableNextColumn();
+                    if (Widgets.IconButton(FontAwesomeIcon.Trash, "Remove slot"))
+                        removeSlot = slot;
+                }
+            }
+        }
+        if (removeSlot is { } rs)
+        {
+            e.Slots.Remove(rs);
+            changed = true;
+        }
+
+        var free = Enum.GetValues<EquipSlot>().Where(s => !e.Slots.ContainsKey(s)).ToList();
+        if (free.Count > 0)
+        {
+            if (ImGui.SmallButton("+ Add slot"))
+                ImGui.OpenPopup("##addSlot");
+            using var popup = ImRaii.Popup("##addSlot");
+            if (popup)
+                foreach (var slot in free)
+                    if (ImGui.Selectable(Widgets.Humanize(slot.ToString())))
+                    {
+                        e.Slots[slot] = new SlotEdit();
+                        changed       = true;
+                    }
+        }
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Visibility");
+        foreach (var (index, label, on, off) in VisibilityToggles)
+        {
+            using var id = ImRaii.PushId((int)index);
+            bool? value = e.Meta.TryGetValue(index, out var v) ? v : null;
+            var   idx   = value switch { null => 0, true => 1, false => 2 };
+            var   names = new[] { "Keep", on, off };
+            ImGui.SetNextItemWidth(130 * Widgets.Scale);
+            if (ImGui.Combo(label, ref idx, names, names.Length))
+            {
+                if (idx == 0) e.Meta.Remove(index);
+                else e.Meta[index] = idx == 1;
+                changed = true;
+            }
+            if (index != VisibilityToggles[^1].Index)
+                ImGui.SameLine();
+        }
+        return changed;
+    }
+
+    /// <summary> Dye picker: colour swatch + name, all 128 dyes. </summary>
+    private bool StainCombo(string id, ref byte stain)
+    {
+        var changed = false;
+        var stains  = _s.Catalog.Stains;
+        var wanted  = stain;
+        var current = stains.FirstOrDefault(s => s.Id == wanted);
+        using var scope = ImRaii.PushId(id);
+        if (current is not null && current.Id != 0)
+        {
+            ImGui.ColorButton("##cur", RgbToVec(current.Rgb), ImGuiColorEditFlags.NoTooltip, new Vector2(ImGui.GetFrameHeight()));
+            ImGui.SameLine(0, 2);
+        }
+        ImGui.SetNextItemWidth(130 * Widgets.Scale);
+        using var combo = ImRaii.Combo("##combo", current?.Name ?? (stain == 0 ? "No dye" : $"#{stain}"));
+        if (!combo)
+            return false;
+        foreach (var s in stains)
+        {
+            using var sid = ImRaii.PushId(s.Id);
+            if (s.Id != 0)
+            {
+                ImGui.ColorButton("##c", RgbToVec(s.Rgb), ImGuiColorEditFlags.NoTooltip, new Vector2(ImGui.GetFrameHeight()));
+                ImGui.SameLine();
+            }
+            if (ImGui.Selectable(s.Id == 0 ? "No dye" : s.Name, s.Id == stain))
+            {
+                stain   = s.Id;
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    private static Vector4 RgbToVec(uint rgb)
+        => new(((rgb >> 16) & 0xFF) / 255f, ((rgb >> 8) & 0xFF) / 255f, (rgb & 0xFF) / 255f, 1f);
+
+    // ---- Appearance Changes -------------------------------------------------------------------------
+
+    private bool DrawAppearance(AppearanceLayer a)
+    {
+        var changed = false;
+        var current = AppearanceCatalog.FromCustomizeBytes(_caches.CurrentCustomize());
+
+        // Values are listed for one clan + gender: the layer's own when it sets them, else the character's.
+        var clan   = a.Customize.TryGetValue(CustomizeIndex.Clan, out var c) ? c : current?.GetValueOrDefault(CustomizeIndex.Clan) ?? 0;
+        var gender = a.Customize.TryGetValue(CustomizeIndex.Gender, out var g) ? g : current?.GetValueOrDefault(CustomizeIndex.Gender) ?? 0;
+        if (clan is < 1 or > 16)
+        {
+            Widgets.Hint("Not logged in: pickers show values for Midlander male until the character is known (or set Clan / Gender below).");
+            clan = 1;
+        }
+        var set     = _s.Catalog.Appearance.For(clan, gender);
+        var clanName = _s.Catalog.Appearance.Clans.FirstOrDefault(t => t.Id == clan).Name ?? $"clan {clan}";
+        Widgets.Hint($"Values shown for {clanName} {GenderNames[gender == 0 ? 0 : 1]}. Unticked fields pass through.");
+
+        using (var table = ImRaii.Table("##fields", 3, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH))
+        {
+            if (table)
+            {
+                ImGui.TableSetupColumn("##set", ImGuiTableColumnFlags.WidthFixed, ImGui.GetFrameHeight());
+                ImGui.TableSetupColumn("Field", ImGuiTableColumnFlags.WidthFixed, 190 * Widgets.Scale);
+                ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+
+                foreach (var index in AppearanceCatalog.EditorOrder)
+                {
+                    var kind = AppearanceCatalog.KindOf(index);
+                    if (index == CustomizeIndex.TailShape && !set.HasTail && !a.Customize.ContainsKey(index))
+                        continue;
+                    if (kind == AppearanceFieldKind.List && set.ListSizes.GetValueOrDefault(index) == 0 && !a.Customize.ContainsKey(index) && current is null)
+                        continue;
+
+                    using var id = ImRaii.PushId((int)index);
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    var isSet = a.Customize.TryGetValue(index, out var value);
+                    if (ImGui.Checkbox("##on", ref isSet))
+                    {
+                        if (isSet)
+                            a.Customize[index] = current?.GetValueOrDefault(index) ?? DefaultValue(index, set);
+                        else
+                            a.Customize.Remove(index);
+                        changed = true;
+                    }
+                    Widgets.Tooltip(isSet ? "Set by this layer." : "Unticked: passes through.");
+
+                    ImGui.TableNextColumn();
+                    using (ImRaii.PushColor(ImGuiCol.Text, Widgets.Muted, !isSet))
+                        ImGui.TextUnformatted(AppearanceCatalog.LabelOf(index));
+
+                    ImGui.TableNextColumn();
+                    if (!isSet)
+                    {
+                        if (current is { } cur && cur.TryGetValue(index, out var now))
+                            Widgets.Hint($"current: {DescribeValue(index, now, set)}");
+                        continue;
+                    }
+
+                    var faceForIcons = a.Customize.TryGetValue(CustomizeIndex.Face, out var face) ? face : current?.GetValueOrDefault(CustomizeIndex.Face) ?? 1;
+                    if (DrawCustomizeValue(index, kind, ref value, set, faceForIcons))
+                    {
+                        a.Customize[index] = value;
+                        changed            = true;
+                    }
+                }
+
+                // Wetness lives with the customization in Glamourer.
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                var wetSet = a.Wetness is not null;
+                if (ImGui.Checkbox("##wet", ref wetSet))
+                {
+                    a.Wetness = wetSet ? true : null;
+                    changed   = true;
+                }
+                ImGui.TableNextColumn();
+                using (ImRaii.PushColor(ImGuiCol.Text, Widgets.Muted, !wetSet))
+                    ImGui.TextUnformatted("Wetness");
+                ImGui.TableNextColumn();
+                if (wetSet)
+                {
+                    var wet = a.Wetness == true;
+                    if (ImGui.Checkbox(wet ? "wet##w" : "dry##w", ref wet))
+                    {
+                        a.Wetness = wet;
+                        changed   = true;
+                    }
+                }
+            }
+        }
+
+        ImGui.Spacing();
+        using var adv = ImRaii.TreeNode($"Advanced colours and parameters ({a.Parameters.Count} set)###adv");
+        if (!adv)
+            return changed;
+        Widgets.Hint("Exact colours (linear RGB, like Glamourer's advanced customization). Unticked parameters pass through.");
+        foreach (var (key, name, kind) in AdvancedParameters.All)
+        {
+            using var id = ImRaii.PushId(key);
+            var isSet = a.Parameters.TryGetValue(key, out var value);
+            if (ImGui.Checkbox("##on", ref isSet))
+            {
+                if (isSet)
+                    a.Parameters[key] = new AdvancedParameter { Scalar = kind == AdvancedParameterKind.Value ? 1f : 0f };
+                else
+                    a.Parameters.Remove(key);
+                changed = true;
+            }
+            ImGui.SameLine();
+            using (ImRaii.Disabled(!isSet))
+            {
+                value ??= new AdvancedParameter();
+                ImGui.SetNextItemWidth(220 * Widgets.Scale);
+                switch (kind)
+                {
+                    case AdvancedParameterKind.Rgb:
+                    {
+                        var color = value.Color;
+                        if (ImGui.ColorEdit3(name, ref color, ImGuiColorEditFlags.Float) && isSet) { value.Color = color; changed = true; }
+                        break;
+                    }
+                    case AdvancedParameterKind.Rgba:
+                    {
+                        var color = new Vector4(value.Color, value.Alpha);
+                        if (ImGui.ColorEdit4(name, ref color, ImGuiColorEditFlags.Float | ImGuiColorEditFlags.AlphaBar) && isSet)
+                        {
+                            value.Color = new Vector3(color.X, color.Y, color.Z);
+                            value.Alpha = color.W;
+                            changed     = true;
+                        }
+                        break;
+                    }
+                    case AdvancedParameterKind.Percentage:
+                    {
+                        var pct = value.Scalar * 100f;
+                        if (ImGui.SliderFloat(name, ref pct, 0f, 100f, "%.0f %%") && isSet) { value.Scalar = pct / 100f; changed = true; }
+                        break;
+                    }
+                    default:
+                    {
+                        var v = value.Scalar;
+                        if (ImGui.InputFloat(name, ref v, 0.1f, 1f, "%.2f") && isSet) { value.Scalar = v; changed = true; }
+                        break;
+                    }
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static int DefaultValue(CustomizeIndex index, AppearanceSet set)
+        => AppearanceCatalog.KindOf(index) switch
+        {
+            AppearanceFieldKind.Icons   => set.IconsFor(index).FirstOrDefault().Value,
+            AppearanceFieldKind.Percentage => 50,
+            AppearanceFieldKind.Number  => index == CustomizeIndex.Clan ? set.Clan : index == CustomizeIndex.Gender ? set.Gender : 1,
+            _                           => 0,
+        };
+
+    private string DescribeValue(CustomizeIndex index, int value, AppearanceSet set)
+        => AppearanceCatalog.KindOf(index) switch
+        {
+            AppearanceFieldKind.Flag          => value != 0 ? "on" : "off",
+            AppearanceFieldKind.FacialFeature => value != 0 ? "on" : "off",
+            AppearanceFieldKind.Percentage    => $"{value} %",
+            AppearanceFieldKind.List          => $"{value + 1}",
+            AppearanceFieldKind.Number when index == CustomizeIndex.Clan => _s.Catalog.Appearance.Clans.FirstOrDefault(t => t.Id == value).Name ?? value.ToString(),
+            AppearanceFieldKind.Number when index == CustomizeIndex.Gender => GenderNames[value == 0 ? 0 : 1],
+            AppearanceFieldKind.Icons         => set.IconsFor(index).FirstOrDefault(o => o.Value == value) is { Label.Length: > 0 } o ? o.Label : value.ToString(),
+            _                                 => value.ToString(),
+        };
+
+    /// <summary> Editor for one customization value. </summary>
+    private bool DrawCustomizeValue(CustomizeIndex index, AppearanceFieldKind kind, ref int value, AppearanceSet set, int faceForIcons)
+    {
+        switch (kind)
+        {
+            case AppearanceFieldKind.Flag:
+            {
+                var on = value != 0;
+                if (!ImGui.Checkbox(on ? "on##f" : "off##f", ref on))
+                    return false;
+                value = on ? AppearanceCatalog.FlagOn : 0;
+                return true;
+            }
+            case AppearanceFieldKind.FacialFeature:
+            {
+                var on = value != 0;
+                if (set.FacialFeatureIcons.TryGetValue(faceForIcons, out var icons))
+                {
+                    DrawIcon(icons[index - CustomizeIndex.FacialFeature1], ImGui.GetFrameHeight() * 1.6f);
+                    ImGui.SameLine();
+                }
+                if (!ImGui.Checkbox(on ? "on##f" : "off##f", ref on))
+                    return false;
+                value = on ? AppearanceCatalog.FacialFeatureBit(index) : 0;
+                return true;
+            }
+            case AppearanceFieldKind.Percentage:
+            {
+                ImGui.SetNextItemWidth(220 * Widgets.Scale);
+                return ImGui.SliderInt("##p", ref value, 0, 100, "%d %%");
+            }
+            case AppearanceFieldKind.List:
+            {
+                var size = set.ListSizes.GetValueOrDefault(index);
+                if (size <= 0)
+                    return NumberInput(ref value);
+                var names = Enumerable.Range(1, size).Select(i => $"{i}").ToArray();
+                var idx   = Math.Clamp(value, 0, size - 1);
+                ImGui.SetNextItemWidth(120 * Widgets.Scale);
+                if (!ImGui.Combo("##l", ref idx, names, names.Length) || idx == value)
+                    return false;
+                value = idx;
+                return true;
+            }
+            case AppearanceFieldKind.Number when index == CustomizeIndex.Clan:
+            {
+                var clans   = _s.Catalog.Appearance.Clans;
+                var names   = clans.Select(t => t.Name).ToArray();
+                var wanted  = value;
+                var idx     = Math.Max(0, clans.ToList().FindIndex(t => t.Id == wanted));
+                ImGui.SetNextItemWidth(200 * Widgets.Scale);
+                if (names.Length == 0 || !ImGui.Combo("##clan", ref idx, names, names.Length) || clans[idx].Id == value)
+                    return false;
+                value = clans[idx].Id;
+                return true;
+            }
+            case AppearanceFieldKind.Number when index == CustomizeIndex.Gender:
+            {
+                var idx = value == 0 ? 0 : 1;
+                ImGui.SetNextItemWidth(120 * Widgets.Scale);
+                if (!ImGui.Combo("##g", ref idx, GenderNames, GenderNames.Length) || idx == value)
+                    return false;
+                value = idx;
+                return true;
+            }
+            case AppearanceFieldKind.Number:
+                return NumberInput(ref value);
+            case AppearanceFieldKind.Colors:
+                return ColorPicker(index, ref value, set.ColorsFor(index));
+            case AppearanceFieldKind.Icons:
+                return IconPicker(index, ref value, set.IconsFor(index));
+            default:
+                return NumberInput(ref value);
+        }
+    }
+
+    private static bool NumberInput(ref int value)
+    {
+        ImGui.SetNextItemWidth(120 * Widgets.Scale);
+        var v = value;
+        if (!ImGui.InputInt("##n", ref v, 1, 10) || v == value)
+            return false;
+        value = Math.Clamp(v, 0, 255);
+        return true;
+    }
+
+    private bool ColorPicker(CustomizeIndex index, ref int value, IReadOnlyList<ColorOption> colors)
+    {
+        if (colors.Count == 0)
+            return NumberInput(ref value);
+        var wanted  = value;
+        var current = colors.FirstOrDefault(c => c.Value == wanted);
+        var swatch  = current.Rgba == 0 && current.Value != value ? new Vector4(0.3f, 0.3f, 0.3f, 1f) : new Vector4(current.R, current.G, current.B, 1f);
+        if (ImGui.ColorButton("##cur", swatch, ImGuiColorEditFlags.NoTooltip, new Vector2(ImGui.GetFrameHeight() * 1.6f, ImGui.GetFrameHeight())))
+            ImGui.OpenPopup("##colors");
+        ImGui.SameLine();
+        ImGui.TextUnformatted($"#{value}");
+        var changed = false;
+        using var popup = ImRaii.Popup("##colors");
+        if (!popup)
+            return false;
+        var size = ImGui.GetFrameHeight() * 1.25f;
+        var perRow = 16;
+        for (var i = 0; i < colors.Count; i++)
+        {
+            var c = colors[i];
+            using var cid = ImRaii.PushId(c.Value);
+            if (i % perRow != 0)
+                ImGui.SameLine(0, 2);
+            var flags = ImGuiColorEditFlags.NoTooltip | (c.Value == value ? ImGuiColorEditFlags.None : ImGuiColorEditFlags.NoBorder);
+            if (ImGui.ColorButton("##c", new Vector4(c.R, c.G, c.B, 1f), flags, new Vector2(size)))
+            {
+                value   = c.Value;
+                changed = true;
+                ImGui.CloseCurrentPopup();
+            }
+            Widgets.Tooltip($"#{c.Value}");
+        }
+        return changed;
+    }
+
+    private bool IconPicker(CustomizeIndex index, ref int value, IReadOnlyList<AppearanceOption> options)
+    {
+        if (options.Count == 0)
+            return NumberInput(ref value);
+        var wanted  = value;
+        var current = options.FirstOrDefault(o => o.Value == wanted);
+        var size    = ImGui.GetFrameHeight() * 2f;
+        if (current.IconId != 0)
+            DrawIcon(current.IconId, size);
+        else
+            ImGui.Dummy(new Vector2(size));
+        ImGui.SameLine();
+        if (ImGui.Button(current.Label.Length > 0 ? current.Label : $"#{value}"))
+            ImGui.OpenPopup("##icons");
+        var changed = false;
+        using var popup = ImRaii.Popup("##icons");
+        if (!popup)
+            return false;
+        var big    = ImGui.GetFrameHeight() * 2.6f;
+        var perRow = 8;
+        for (var i = 0; i < options.Count; i++)
+        {
+            var o = options[i];
+            using var oid = ImRaii.PushId(o.Value);
+            if (i % perRow != 0)
+                ImGui.SameLine(0, 4);
+            var pos = ImGui.GetCursorScreenPos();
+            if (o.IconId != 0)
+                DrawIcon(o.IconId, big);
+            else
+                ImGui.Button(o.Label, new Vector2(big));
+            if (o.Value == value)
+                ImGui.GetWindowDrawList().AddRect(pos, pos + new Vector2(big), ImGui.GetColorU32(Widgets.Accent), 3f, ImDrawFlags.None, 2f);
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(o.Label);
+            if (ImGui.IsItemClicked())
+            {
+                value   = o.Value;
+                changed = true;
+                ImGui.CloseCurrentPopup();
+            }
+        }
+        return changed;
+    }
+
+    private void DrawIcon(uint iconId, float size)
+    {
+        var wrap = iconId == 0 ? null : _s.TextureProvider.GetFromGameIcon(new GameIconLookup(iconId)).GetWrapOrDefault();
+        if (wrap is null)
+        {
+            ImGui.Dummy(new Vector2(size));
+            return;
+        }
+        ImGui.Image(wrap.Handle, new Vector2(size));
+    }
+
+    // ---- Honorific / Moodles / unknown --------------------------------------------------------------
 
     private static bool DrawHonorific(HonorificLayer h)
     {

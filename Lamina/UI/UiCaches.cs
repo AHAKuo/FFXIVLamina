@@ -1,3 +1,4 @@
+using Lamina.Models;
 using Penumbra.Api.Enums;
 
 namespace Lamina.UI;
@@ -100,6 +101,7 @@ internal sealed class UiCaches : IDisposable
         _stale       = false;
         _lastRefresh = now;
         _modSettings.Clear();
+        _currentModSettings.Clear();
 
         try
         {
@@ -144,6 +146,77 @@ internal sealed class UiCaches : IDisposable
             _s.Log.Debug(ex, "UI: vitrine designs refresh failed.");
         }
     }
+
+    // ---- equipment / appearance pickers ---------------------------------------------------------
+
+    private readonly Dictionary<EquipSlot, IReadOnlyList<Widgets.PickItem<ulong>>> _itemsBySlot = new();
+    private byte[]? _customize;
+    private DateTime _customizeRead = DateTime.MinValue;
+
+    /// <summary> Items that go into a slot, with Glamourer's "Nothing" first for gear slots. Built once per slot. </summary>
+    public IReadOnlyList<Widgets.PickItem<ulong>> ItemsFor(EquipSlot slot)
+    {
+        if (_itemsBySlot.TryGetValue(slot, out var cached))
+            return cached;
+        var list = new List<Widgets.PickItem<ulong>>();
+        if (NothingItems.IdFor(slot) is { } nothing)
+            list.Add(new Widgets.PickItem<ulong>(nothing, "Nothing", "empty slot"));
+        // Rings: both ring slots take the same items.
+        var wanted = slot == EquipSlot.LFinger ? EquipSlot.RFinger : slot;
+        list.AddRange(_s.Catalog.EquipItems.Where(i => i.Slot == wanted || (wanted == EquipSlot.RFinger && i.Slot == EquipSlot.LFinger))
+            .Select(i => new Widgets.PickItem<ulong>(i.Id, i.Name, i.Category)));
+        _itemsBySlot[slot] = list;
+        return list;
+    }
+
+    /// <summary> The local player's customize bytes, re-read at most once per second. Null when not logged in. </summary>
+    public byte[]? CurrentCustomize()
+    {
+        var now = DateTime.UtcNow;
+        if (now - _customizeRead < TimeSpan.FromSeconds(1))
+            return _customize;
+        _customizeRead = now;
+        try
+        {
+            var player = _s.ObjectTable.LocalPlayer;
+            _customize = player is null ? null : player.Customize.ToArray();
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Debug(ex, "UI: reading the player's customize data failed.");
+            _customize = null;
+        }
+        return _customize;
+    }
+
+    private readonly Dictionary<string, (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings)?> _currentModSettings = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The mod's permanent settings in the Lamina collection (what an unticked part inherits when no earlier pass set it).
+    /// Null when the mod is not configured there, the collection is missing, or Penumbra is unavailable. Cached until the next refresh.
+    /// </summary>
+    public (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings)? CurrentModSettings(string modDirectory)
+    {
+        if (_currentModSettings.TryGetValue(modDirectory, out var cached))
+            return cached;
+        (bool, int, IReadOnlyDictionary<string, IReadOnlyList<string>>)? result = null;
+        try
+        {
+            if (_s.Penumbra.Available && _s.Engine.CollectionId is { } collection
+             && _s.Penumbra.GetCurrentModSettings(collection, modDirectory, ignoreTemporary: true) is { } current)
+                result = (current.Enabled, current.Priority, current.Settings);
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Debug(ex, "UI: GetCurrentModSettings failed for {Mod}.", modDirectory);
+        }
+        _currentModSettings[modDirectory] = result;
+        return result;
+    }
+
+    /// <summary> Forget cached current settings (after the user edits the collection in Penumbra). </summary>
+    public void ForgetCurrentModSettings()
+        => _currentModSettings.Clear();
 
     /// <summary> Option groups of a mod, cached per mod until the next refresh. Null when the mod is unknown. </summary>
     public IReadOnlyDictionary<string, (string[] Options, GroupType Type)>? ModSettings(string modDirectory)

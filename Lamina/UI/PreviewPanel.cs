@@ -95,9 +95,9 @@ internal sealed class PreviewPanel
     private IEnumerable<(string Field, string Value, Provenance Source)> Rows(VirtualDesign d)
     {
         foreach (var (slot, f) in d.Items.OrderBy(kv => kv.Key))
-            yield return ($"{Widgets.Humanize(slot.ToString())} item", $"item {f.Value.ItemId}", f.Source);
+            yield return ($"{Widgets.Humanize(slot.ToString())} item", _s.Catalog.ItemName(f.Value.ItemId), f.Source);
         foreach (var (slot, f) in d.Stains.OrderBy(kv => kv.Key))
-            yield return ($"{Widgets.Humanize(slot.ToString())} dyes", $"{f.Value.Stain1} / {f.Value.Stain2}", f.Source);
+            yield return ($"{Widgets.Humanize(slot.ToString())} dyes", $"{_s.Catalog.StainName(f.Value.Stain1)} / {_s.Catalog.StainName(f.Value.Stain2)}", f.Source);
         foreach (var (slot, f) in d.Crests.OrderBy(kv => kv.Key))
             yield return ($"{Widgets.Humanize(slot.ToString())} crest", f.Value ? "on" : "off", f.Source);
         foreach (var (slot, f) in d.Bonus.OrderBy(kv => kv.Key))
@@ -112,11 +112,14 @@ internal sealed class PreviewPanel
             yield return ($"Advanced {Widgets.Humanize(key)}", Widgets.Truncate(f.Value.ToString(Newtonsoft.Json.Formatting.None), 48), f.Source);
         foreach (var (key, f) in d.Materials.OrderBy(kv => kv.Key))
             yield return ($"Material {key}", Widgets.Truncate(f.Value.ToString(Newtonsoft.Json.Formatting.None), 48), f.Source);
-        foreach (var (dir, f) in d.Mods.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+        foreach (var (dir, c) in d.Mods.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
         {
-            var m = f.Value;
-            var text = $"{(m.State == ModToggle.Enable ? "enable" : "disable")}, prio {m.Priority ?? 0}" + (m.Settings is { Count: > 0 } ? $", {m.Settings.Count} group(s)" : string.Empty);
-            yield return ($"Mod: {_caches.ModName(dir)}", text, f.Source);
+            var name = _caches.ModName(dir);
+            yield return ($"Mod: {name}", c.State is { } s ? (s.Value == ModToggle.Enable ? "enable" : "disable") : "(enabled flag inherited)", c.State?.Source ?? c.PrimarySource);
+            if (c.Priority is { } p)
+                yield return ($"Mod: {name} · priority", p.Value.ToString(), p.Source);
+            foreach (var (group, f) in c.Settings.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                yield return ($"Mod: {name} · {group}", f.Value.Count == 0 ? "(none)" : string.Join(" | ", f.Value), f.Source);
         }
         if (d.Honorific is { } h)
             yield return ("Honorific", h.Value.Clear ? "clear" : $"{h.Value.Title} ({(h.Value.IsPrefix ? "prefix" : "suffix")})", h.Source);
