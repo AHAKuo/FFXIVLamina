@@ -30,12 +30,12 @@
 
 ## C) Release and register in ahadevtools
 - [x] Add `images/icon.png` (512x512).
-- [ ] `dotnet build -c Release` in `Lamina/`, commit, push.
-- [ ] Tag and release: `git tag -a v0.1.0 -m "Lamina v0.1.0"`, `git push origin v0.1.0`, then
+- [x] `dotnet build -c Release` in `Lamina/`, commit, push.
+- [x] Tag and release (v0.1.0 released 2026-10-15): `git tag -a v0.1.0 -m "Lamina v0.1.0"`, `git push origin v0.1.0`, then
       `gh release create v0.1.0 Lamina/bin/Release/Lamina/latest.zip Lamina/bin/Release/Lamina/Lamina.json --title "Lamina v0.1.0" --notes "Initial release."`
-- [ ] Add `"AHAKuo/FFXIVLamina"` to `ahadevtools/plugins.json` and a row to its README table.
-- [ ] Regenerate: `cd ahadevtools && GITHUB_TOKEN=$(gh auth token) python scripts/build_pluginmaster.py`, commit, push.
-- [ ] Verify `https://raw.githubusercontent.com/AHAKuo/ahadevtools/main/pluginmaster.json` lists Lamina and it shows in `/xlplugins`.
+- [x] Add `"AHAKuo/FFXIVLamina"` to `ahadevtools/plugins.json` and a row to its README table.
+- [x] Regenerate: `cd ahadevtools && GITHUB_TOKEN=$(gh auth token) python scripts/build_pluginmaster.py`, commit, push.
+- [x] Verify `https://raw.githubusercontent.com/AHAKuo/ahadevtools/main/pluginmaster.json` lists Lamina and it shows in `/xlplugins`.
 
 ## D) Split Vitrine into its own plugin (in progress 2026-10-15)
 Lamina only uses Vitrine for the Vitrine Design layer (design id → mod states), the design/catalog pickers in the Lamina UI, a designs-changed signal, and hosting the `/vit` window. Vitrine only needs a data directory, a collection + temp key for "Preview on character", and a re-evaluate callback from Lamina. The split is cheap:
