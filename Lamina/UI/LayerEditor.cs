@@ -267,7 +267,7 @@ internal sealed class LayerEditor
                     {
                         m.ModDirectory = dir;
                         m.ModName      = _caches.ModName(dir);
-                        PrefillFromPenumbra(m, allGroups: true);
+                        PrefillFromPenumbra(m, stateAndPriority: true);
                         changed = true;
                     }
                     if (!known && !string.IsNullOrEmpty(m.ModDirectory))
@@ -330,24 +330,31 @@ internal sealed class LayerEditor
                         {
                             if (ImGui.SmallButton("Apply all##ps"))
                             {
-                                PrefillFromPenumbra(m, allGroups: true, keepExisting: true);
+                                SetAllGroups(m, available, current?.Settings, allOptionsOn: true);
                                 changed = true;
                             }
-                            Widgets.Tooltip("Tick every option group, prefilled with the collection's current value.");
+                            Widgets.Tooltip("Tick every group and turn every option on. Single-choice groups keep the collection's current choice.");
                             ImGui.SameLine();
                             if (ImGui.SmallButton("Disable all##ps"))
+                            {
+                                SetAllGroups(m, available, current?.Settings, allOptionsOn: false);
+                                changed = true;
+                            }
+                            Widgets.Tooltip("Tick every group and turn every option off, so this layer switches the mod's options off. Single-choice groups keep the collection's current choice.");
+                            ImGui.SameLine();
+                            if (ImGui.SmallButton("Reset to Penumbra##ps"))
+                            {
+                                PrefillFromPenumbra(m, stateAndPriority: false);
+                                changed = true;
+                            }
+                            Widgets.Tooltip("Tick every group with the collection's current values (Penumbra's defaults when the mod is not configured there).");
+                            ImGui.SameLine();
+                            if (ImGui.SmallButton("Inherit all##ps"))
                             {
                                 m.Settings = null;
                                 changed    = true;
                             }
-                            Widgets.Tooltip("Untick every option group: all of them are inherited.");
-                            ImGui.SameLine();
-                            if (ImGui.SmallButton("Reset to Penumbra##ps"))
-                            {
-                                PrefillFromPenumbra(m, allGroups: false);
-                                changed = true;
-                            }
-                            Widgets.Tooltip("Sets the ticked groups back to the collection's current values (Penumbra's defaults when the mod is not configured there).");
+                            Widgets.Tooltip("Untick every group: all of them are inherited (earlier pass, else the collection).");
                             m.Settings ??= new Dictionary<string, List<string>>();
                             if (DrawSettingsEditor("pset", available, m.Settings, current?.Settings))
                                 changed = true;
@@ -377,31 +384,40 @@ internal sealed class LayerEditor
 
     /// <summary>
     /// Fills a mod entry from the collection's current settings (Penumbra's defaults when the mod is not configured there):
-    /// enabled, priority and, with <paramref name="allGroups"/>, every option group ticked. Without it only already ticked
-    /// groups are reset. <paramref name="keepExisting"/> leaves ticked groups' values alone and only adds the missing ones.
+    /// every option group ticked with the collection's value and, with <paramref name="stateAndPriority"/> (a freshly
+    /// picked mod), enabled plus the collection's priority.
     /// </summary>
-    private void PrefillFromPenumbra(ModState m, bool allGroups, bool keepExisting = false)
+    private void PrefillFromPenumbra(ModState m, bool stateAndPriority)
     {
         var available = _caches.ModSettings(m.ModDirectory);
         var current   = _caches.CurrentModSettings(m.ModDirectory);
-        if (!keepExisting || m.State is null)
-            m.State = ModToggle.Enable;
-        if (!keepExisting || m.Priority is null)
+        if (stateAndPriority)
+        {
+            m.State    = ModToggle.Enable;
             m.Priority = current?.Priority ?? 0;
+        }
         if (available is null)
             return;
 
         var settings = m.Settings ?? new Dictionary<string, List<string>>();
         foreach (var (group, (options, type)) in available)
-        {
-            var ticked = settings.ContainsKey(group);
-            if (!allGroups && !ticked)
-                continue;
-            if (keepExisting && ticked)
-                continue;
             settings[group] = DefaultOptions(group, options, type, current?.Settings);
-        }
 
+        m.Settings = settings.Count == 0 ? null : settings;
+    }
+
+    /// <summary>
+    /// Ticks every group. Multi-select groups get every option on (<paramref name="allOptionsOn"/>) or off; single-select
+    /// groups keep the collection's current choice (else Penumbra's default), since they cannot be "all" or "none".
+    /// </summary>
+    private static void SetAllGroups(ModState m, IReadOnlyDictionary<string, (string[] Options, GroupType Type)> available,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? current, bool allOptionsOn)
+    {
+        var settings = m.Settings ?? new Dictionary<string, List<string>>();
+        foreach (var (group, (options, type)) in available)
+            settings[group] = type == GroupType.Single
+                ? DefaultOptions(group, options, type, current)
+                : allOptionsOn ? options.ToList() : new List<string>();
         m.Settings = settings.Count == 0 ? null : settings;
     }
 
@@ -449,8 +465,24 @@ internal sealed class LayerEditor
                 continue;
             }
 
-            using var indent = ImRaii.PushIndent(20f * Widgets.Scale);
             var single = type == GroupType.Single;
+            if (!single && options.Length > 1)
+            {
+                ImGui.SameLine();
+                if (ImGui.SmallButton("all##g"))
+                {
+                    selected.Clear();
+                    selected.AddRange(options);
+                    changed = true;
+                }
+                ImGui.SameLine();
+                if (ImGui.SmallButton("none##g"))
+                {
+                    selected.Clear();
+                    changed = true;
+                }
+            }
+            using var indent = ImRaii.PushIndent(20f * Widgets.Scale);
             foreach (var option in options)
             {
                 using var oid = ImRaii.PushId(option);
@@ -678,7 +710,7 @@ internal sealed class LayerEditor
                     if (ImGui.Checkbox("##on", ref isSet))
                     {
                         if (isSet)
-                            a.Customize[index] = current?.GetValueOrDefault(index) ?? DefaultValue(index, set);
+                            value = a.Customize[index] = current?.GetValueOrDefault(index) ?? DefaultValue(index, set);
                         else
                             a.Customize.Remove(index);
                         changed = true;
@@ -944,7 +976,7 @@ internal sealed class LayerEditor
         else
             ImGui.Dummy(new Vector2(size));
         ImGui.SameLine();
-        if (ImGui.Button(current.Label.Length > 0 ? current.Label : $"#{value}"))
+        if (ImGui.Button(current.Label is { Length: > 0 } ? current.Label : $"#{value}"))
             ImGui.OpenPopup("##icons");
         var changed = false;
         using var popup = ImRaii.Popup("##icons");

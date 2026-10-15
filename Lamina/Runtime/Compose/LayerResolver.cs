@@ -178,7 +178,13 @@ public sealed class LayerResolver
         skipReason = null;
         var draft = new DesignDraft();
         foreach (var (index, value) in layer.Customize)
+        {
+            // Body types other than the player one (1) are NPC models and crash the game; the editor no longer offers
+            // the field and values saved by older builds are ignored.
+            if (index == CustomizeIndex.BodyType)
+                continue;
             draft.Customize[index] = new Field<int>(value, source);
+        }
         if (layer.Wetness is { } wet)
             draft.Meta[MetaIndex.Wetness] = new Field<bool>(wet, source);
         foreach (var (key, value) in layer.Parameters)

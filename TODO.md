@@ -69,6 +69,7 @@ any other layer and Lamina applies them in the same single batch.
       advanced parameters (RGB / RGBA / percentage / value). Unset fields pass through.
 - [x] Models + JSON kinds, resolver → DesignDraft fields with provenance, Macro Override masks apply, Preview and
       `/lam why` name the layer, Add Layer entries, tests for cascade order and masks.
+- [x] Body Type is not offered and never sent (values other than 1 are NPC models and crash the game); Race follows Clan.
 - [ ] Verify in game: "Nothing" ids are accepted by ApplyState for every gear slot; icon pickers render; colour swatches
       match the character creator; weapons pair main / off hand sensibly (no "Nothing" offered for weapons).
 - [ ] Glasses (facewear) slot in the Equipment layer (Glamourer's bonus item ids are not plain sheet ids).
@@ -79,7 +80,9 @@ pass can tweak one option group of a mod an earlier pass enabled without restati
 - [x] **Per-setting "applies" checkbox**: enabled flag, priority and every option group have one. Checked = this layer
       sets the value; unchecked = inherited from the mod state already in the running draft, else from the mod's
       permanent settings in the Lamina collection (`GetCurrentModSettings`, temporary settings ignored) at apply time.
-      Buttons per mod: **Apply all**, **Disable all**, **Reset to Penumbra**.
+      Buttons per mod: **Apply all** (every group ticked, every multi-select option on), **Disable all** (every group
+      ticked, every option off), **Reset to Penumbra** (every group ticked with the collection's values), **Inherit all**
+      (every group unticked); multi-select groups also have all / none.
 - [x] Merge rule (TDD 5.7): `ModContribution` merges per part with provenance per part; `/lam why` and Preview show
       which pass set each group. Profile files bump to v2 (no rewrite: v1 entries already state the flag and the groups
       they list; their unlisted groups are now inherited from the collection instead of reset to the mod default, which

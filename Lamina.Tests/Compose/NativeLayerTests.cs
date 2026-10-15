@@ -2,6 +2,7 @@ using System.Numerics;
 using Lamina.Models;
 using Lamina.Runtime;
 using Lamina.Runtime.Compose;
+using Lamina.Runtime.State;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
@@ -134,6 +135,19 @@ public class NativeLayerTests
         Assert.Equal(60, state["Customize"]!["HairColor"]!["Value"]!.Value<int>());
         Assert.Null(state["Customize"]!["Hairstyle"]);
         Assert.True(state["Parameters"]!["RightEye"]!["Apply"]!.Value<bool>());
+    }
+
+    [Fact]
+    public void Appearance_BodyTypeIsNeverSent()
+    {
+        var only = new AppearanceLayer { Customize = { [CustomizeIndex.BodyType] = 2 } };
+        Assert.Null(Resolver().Resolve(only, Src, out var reason));
+        Assert.Equal("nothing set", reason);
+
+        var mixed = new AppearanceLayer { Customize = { [CustomizeIndex.BodyType] = 2, [CustomizeIndex.HairColor] = 5 } };
+        var draft = Resolver().Resolve(mixed, Src, out _)!;
+        Assert.Equal(CustomizeIndex.HairColor, Assert.Single(draft.Customize).Key);
+        Assert.DoesNotContain(CustomizeIndex.BodyType, AppearanceCatalog.EditorOrder);
     }
 
     [Fact]

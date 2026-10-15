@@ -123,10 +123,13 @@ public sealed class AppearanceCatalog
     public static int FacialFeatureBit(CustomizeIndex index)
         => 1 << (index - CustomizeIndex.FacialFeature1);
 
-    /// <summary> Display order of the editor. </summary>
+    /// <summary>
+    /// Display order of the editor. Race is implied by Clan and Body Type is not offered: values other than the player
+    /// body type (1) belong to NPC models and crash the game.
+    /// </summary>
     public static readonly IReadOnlyList<CustomizeIndex> EditorOrder = new[]
     {
-        CustomizeIndex.Clan, CustomizeIndex.Gender, CustomizeIndex.BodyType,
+        CustomizeIndex.Clan, CustomizeIndex.Gender,
         CustomizeIndex.Height, CustomizeIndex.BustSize, CustomizeIndex.MuscleMass,
         CustomizeIndex.Face, CustomizeIndex.Hairstyle, CustomizeIndex.Highlights, CustomizeIndex.HairColor, CustomizeIndex.HighlightsColor,
         CustomizeIndex.SkinColor, CustomizeIndex.EyeShape, CustomizeIndex.SmallIris, CustomizeIndex.EyeColorRight, CustomizeIndex.EyeColorLeft,
