@@ -75,6 +75,22 @@ any other layer and Lamina applies them in the same single batch.
       `/lam why` name the layer, Add Layer mini menu entries, tests for cascade order (e.g. Glamourer design then an
       Appearance layer overriding only hair colour; a final "Sitting" group with an Equipment layer removing feet).
 
+## G) Penumbra (Additive) layer and Penumbra defaults
+Today a Penumbra Adjust layer replaces the whole mod entry when it merges (`Mods[dir] = v`), so a later pass cannot
+tweak one option group of a mod an earlier pass enabled without restating every group.
+- [ ] **Penumbra (Additive) layer** (`kind: "PenumbraAdditive"`): per mod, only the option groups listed are changed;
+      everything else is inherited from the mod state already in the running draft (the earlier pass's Eve body
+      settings), or, when the mod is not in the draft yet, from the mod's effective settings in the player's collection
+      (`GetCurrentModSettings`) with enabled = true. Priority and enabled are optional overrides. Example: a "Humid"
+      pass that only sets Eve's skin group to "Glossy" to simulate sweat. Merge rule documented in TDD 5.7; provenance
+      per option group so `/lam why` shows which pass set the gloss.
+- [ ] **Defaults when adding a mod**: when a mod is added to a Penumbra Adjust or Additive layer, prefill its settings
+      from Penumbra (the collection's current settings via `GetCurrentModSettings`, else each group's default option)
+      so the user starts from what Penumbra would do and only changes what they mean to. A "Reset to Penumbra
+      defaults" button per mod.
+- [ ] Settings editor shows, per group, whether the value is "inherited" (dimmed) or "set by this layer"; Additive
+      layers only serialise the groups the user touched.
+
 ## Later (TDD section 14)
 - [ ] Moodles presets: expand to statuses so cleanup can remove them (needs preset-info IPC in the bridge).
 - [ ] Other targets (characters / players).
