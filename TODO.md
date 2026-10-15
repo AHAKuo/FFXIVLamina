@@ -91,6 +91,19 @@ tweak one option group of a mod an earlier pass enabled without restating every 
 - [ ] Settings editor shows, per group, whether the value is "inherited" (dimmed) or "set by this layer"; Additive
       layers only serialise the groups the user touched.
 
+## H) Stretch: File Redirect layer, then Texture Overlay (decals)
+Decals on bodies or gear mean producing a texture, not toggling a setting. Two stages:
+- [ ] **File Redirect layer** (`kind: "FileRedirect"`): game path → file on disk, registered as a Penumbra temporary mod
+      (`AddTemporaryMod` with Lamina's tag, removed on cleanup / `RemoveTemporaryMod`). Any one-file swap without a
+      Penumbra mod. Foundation for the next stage.
+- [ ] **Texture Overlay layer** (`kind: "TextureOverlay"`): a PNG decal + target (body skin diffuse, or a gear item's
+      material texture) + UV position / scale / rotation. Lamina resolves the texture currently in use on the character
+      (Penumbra resolve / resource tree APIs, so body mods like Eve or Bibo+ are respected), composites the decal, writes
+      a `.tex` into the cache keyed by content hash (rebuilt only when inputs change), and redirects it through the File
+      Redirect machinery. Caveats to design for: UV layouts differ per body (vanilla / Eve / Bibo+) so the editor needs
+      a UV template preview; seams distort; Dawntrail skin uses diffuse + mask + normal + index (colour decals in the
+      diffuse first, other maps later); encode cost must never land on the apply path.
+
 ## Later (TDD section 14)
 - [ ] Moodles presets: expand to statuses so cleanup can remove them (needs preset-info IPC in the bridge).
 - [ ] Other targets (characters / players).
