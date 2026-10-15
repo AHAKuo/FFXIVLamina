@@ -16,6 +16,8 @@ If that sounds like something you want, then Lamina is for you.
 ## Features
 - Penumbra mods enable/disable state handling based on virtual designs (auto-resolved).
 - Layering of Glamourer designs.
+- Native layers without a Glamourer design: **Equipment Changes** (item per slot incl. "Nothing", dyes, crest, hat / visor / weapon / viera ears visibility) and **Appearance Changes** (hair, colours, face, shapes, height, wetness, advanced RGB parameters), with pickers that only show values valid for your clan and gender.
+- Penumbra Adjust with per-setting "applies" checkboxes: a pass can change one option group of a mod an earlier pass enabled; everything unticked is inherited from the earlier pass or the Lamina collection.
 - Application of Honorific titles.
 - Application of Moodles states.
 - Vitrine integration (optional): use designs from the separate Vitrine plugin as layers.

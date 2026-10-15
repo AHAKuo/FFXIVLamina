@@ -13,7 +13,7 @@
 - [x] Import / export (JSON and `LAMINA1:` clipboard strings).
 - [x] Commands: `/lam`, `/lam on|off`, `/lam profile <name>`, `/lam reapply`, `/lam redraw`, `/lam why`, `/vit`.
 - [x] UI: Passes (groups / passes / editor with Add Condition + Add Layer mini menus, Macro Override, preview), Profiles, Settings, About, debug overlay.
-- [x] 209 unit tests (persistence, compose, state, engine, bridges fakes, vitrine).
+- [x] Unit tests (persistence, compose, state, engine, bridges fakes, vitrine): 209 after v0.2.0.
 
 ### In-game verification (build order step 1 and 9 of the TDD)
 - [ ] Glamourer accepts the built state JObject; `Lock` holds against automation on zone / job / gearset change (`StateFinalized` re-assert path).
@@ -56,40 +56,39 @@ to and which exact affected piece goes in each slot. Lamina should honour it.
       (default on when the design has an Apply Action); Macro Override masks still apply to those slots.
 - [ ] Preview / `/lam why`: provenance names the Vitrine design for equipped pieces.
 
-## F) Native layer types: Equipment Changes and Appearance Changes
+## F) Native layer types: Equipment Changes and Appearance Changes — done (2026-10-15, v0.2.0)
 Purpose: stop creating throwaway Glamourer designs for one-field tweaks ("only hair colour white at the end of the
 cascade", "no feet while sitting"). These layers write straight into the virtual design, so they cascade and mask like
 any other layer and Lamina applies them in the same single batch.
-- [ ] **Equipment Changes layer** (`kind: "Equipment"`): a list of per-slot edits, each one of
-      - *Visibility*: hat / visor / weapon / viera ears toggles (MetaIndex);
-      - *Dyes*: dye 1 / dye 2 per slot (Stains) from the game's Stain sheet, with "keep item, change dye only";
-      - *Gear*: an item from the game's Item sheet per slot (searchable picker by name, slot filtered; weapons pair
-        main hand / off hand), with "Nothing" (remove the piece, e.g. feet while sitting) and crest on / off.
-      Unset slots stay passthrough.
-- [ ] **Appearance Changes layer** (`kind: "Appearance"`): per-field edits of CustomizeIndex values (hair style, hair
-      colour, highlights on / off + colour, eye colour right / left for odd eyes, eye shape, height, face, skin colour,
-      lip colour, facial features, tail / ears, bust, face paint...) with pickers that show only values valid for the
-      character's current clan / gender (GameCatalog + the actor's state from Glamourer), plus advanced RGB
-      parameters (skin, hair, highlights, eyes, lips) where the user wants exact colours. Unset fields passthrough.
-- [ ] Models + JSON kinds, resolver → DesignDraft fields with provenance, Macro Override masks apply, Preview and
-      `/lam why` name the layer, Add Layer mini menu entries, tests for cascade order (e.g. Glamourer design then an
-      Appearance layer overriding only hair colour; a final "Sitting" group with an Equipment layer removing feet).
+- [x] **Equipment Changes layer** (`kind: "Equipment"`): per slot an item from the Item sheet (searchable, slot filtered,
+      "Nothing" for gear slots using Glamourer's custom ids), dye 1 / dye 2 from the Stain sheet with "keep item, change
+      dye only", crest on / off, plus hat / visor / weapon / viera ears visibility. Unset slots pass through.
+- [x] **Appearance Changes layer** (`kind: "Appearance"`): CustomizeIndex edits with pickers built from CharaMakeType /
+      HairMakeType / CharaMakeCustomize and the human.cmp colour table for the character's clan + gender (icons for faces,
+      hair, tails, face paints, facial features; colour swatches; shape lists; percentages; flags), wetness, and the
+      advanced parameters (RGB / RGBA / percentage / value). Unset fields pass through.
+- [x] Models + JSON kinds, resolver → DesignDraft fields with provenance, Macro Override masks apply, Preview and
+      `/lam why` name the layer, Add Layer entries, tests for cascade order and masks.
+- [ ] Verify in game: "Nothing" ids are accepted by ApplyState for every gear slot; icon pickers render; colour swatches
+      match the character creator; weapons pair main / off hand sensibly (no "Nothing" offered for weapons).
+- [ ] Glasses (facewear) slot in the Equipment layer (Glamourer's bonus item ids are not plain sheet ids).
 
-## G) Penumbra Adjust: per-setting "applies" checkboxes and Penumbra defaults
-One Penumbra layer, not two. Today the layer replaces the whole mod entry when it merges (`Mods[dir] = v`), so a later
-pass cannot tweak one option group of a mod an earlier pass enabled without restating every group.
-- [ ] **Per-setting "applies" checkbox** in the Penumbra Adjust layer's settings editor: every option group (and the
-      enabled flag and priority) gets a checkbox beside it. Checked = this layer sets the value; unchecked = inherited
-      from the mod state already in the running draft (the earlier pass's Eve body settings), or, when the mod is not
-      in the draft yet, from the mod's effective settings in the player's collection (`GetCurrentModSettings`). Two
-      buttons per mod: **Apply all** and **Disable all**. Example: a "Humid" pass whose Eve entry only ticks the skin
-      group and sets it to "Glossy" to simulate sweat.
-- [ ] Merge rule (TDD 5.7): mod entries merge per option group, not wholesale; provenance per group so `/lam why`
-      shows which pass set the gloss. Existing saved layers migrate with every group ticked (same behaviour as today).
-- [ ] **Defaults when adding a mod**: prefill the settings from Penumbra (the collection's current settings via
-      `GetCurrentModSettings`, else each group's default option) so the user starts from what Penumbra would do and only
-      changes what they mean to; a "Reset to Penumbra defaults" button per mod.
-- [ ] Editor shows unticked groups dimmed with their inherited value; only ticked groups are serialised as set.
+## G) Penumbra Adjust: per-setting "applies" checkboxes and Penumbra defaults — done (2026-10-15, v0.2.0)
+One Penumbra layer, not two. Mod entries now merge per part (enabled flag, priority, each option group), so a later
+pass can tweak one option group of a mod an earlier pass enabled without restating every group.
+- [x] **Per-setting "applies" checkbox**: enabled flag, priority and every option group have one. Checked = this layer
+      sets the value; unchecked = inherited from the mod state already in the running draft, else from the mod's
+      permanent settings in the Lamina collection (`GetCurrentModSettings`, temporary settings ignored) at apply time.
+      Buttons per mod: **Apply all**, **Disable all**, **Reset to Penumbra**.
+- [x] Merge rule (TDD 5.7): `ModContribution` merges per part with provenance per part; `/lam why` and Preview show
+      which pass set each group. Profile files bump to v2 (no rewrite: v1 entries already state the flag and the groups
+      they list; their unlisted groups are now inherited from the collection instead of reset to the mod default, which
+      is the same thing unless the mod was configured in the Lamina collection by hand).
+- [x] **Defaults when adding a mod**: picking a mod prefills enabled + priority + every group from the collection's
+      current settings (else first option of single-select groups); "Reset to Penumbra" re-prefills ticked groups.
+- [x] Editor shows unticked groups dimmed with their inherited value; only ticked groups are serialised.
+- [ ] Verify in game: inherited values track the collection after "Re-read collection"; a "Humid" pass that only ticks
+      the skin group leaves the body group of an earlier pass untouched.
 
 ## H) Stretch: File Redirect layer, then Texture Overlay (decals)
 Decals on bodies or gear mean producing a texture, not toggling a setting. Two stages:
