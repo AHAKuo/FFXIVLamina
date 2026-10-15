@@ -116,6 +116,7 @@ internal sealed class LayerEditor
         {
             GlamourerLayer.KindName      => (_s.Glamourer.Available, "Glamourer is not loaded."),
             EquipmentLayer.KindName      => (_s.Glamourer.Available, "Glamourer is not loaded."),
+            EquipmentCleanseLayer.KindName => (_s.Glamourer.Available, "Glamourer is not loaded."),
             AppearanceLayer.KindName     => (_s.Glamourer.Available, "Glamourer is not loaded."),
             PenumbraAdjustLayer.KindName => (_s.Penumbra.Available, "Penumbra is not loaded."),
             VitrineDesignLayer.KindName  => (_s.Vitrine.Available, "Vitrine is not installed (separate plugin)."),
@@ -131,6 +132,7 @@ internal sealed class LayerEditor
             VitrineDesignLayer v  => VitrineSummary(v),
             PenumbraAdjustLayer p => $"{p.Mods.Count} mod(s)",
             EquipmentLayer e      => EquipmentSummary(e),
+            EquipmentCleanseLayer => "empties every gear slot (weapons stay)",
             AppearanceLayer a     => AppearanceSummary(a),
             HonorificLayer h      => h.Clear ? "clear title" : string.IsNullOrEmpty(h.Title) ? "(no title)" : h.Title,
             MoodlesLayer m        => $"+{m.Add.Count + m.AddPresets.Count} / −{m.Remove.Count}",
@@ -139,13 +141,23 @@ internal sealed class LayerEditor
 
     private string VitrineSummary(VitrineDesignLayer v)
     {
-        var name = _caches.VitrineDesignName(v.VitrineDesignId);
-        if (v.SlotOverride is not { } mask)
-            return name;
-
+        var name   = _caches.VitrineDesignName(v.VitrineDesignId);
         var design = _s.Vitrine.GetDesign(v.VitrineDesignId);
-        var slots  = design?.ResolvedPieces().Where(p => mask.Has(p.Slot)).Select(p => Widgets.Humanize(p.Slot.ToString())).ToList() ?? new List<string>();
-        return Widgets.Truncate($"{name} · {(slots.Count == 0 ? "no slots" : string.Join(", ", slots))}", 70);
+        var text   = name;
+        if (v.SlotOverride is { } mask)
+        {
+            var slots = design?.ResolvedPieces().Where(p => mask.Has(p.Slot)).Select(p => Widgets.Humanize(p.Slot.ToString())).ToList() ?? new List<string>();
+            text = $"{name} · {(slots.Count == 0 ? "no slots" : string.Join(", ", slots))}";
+        }
+        if (v.ClearOtherSlotsOverride ?? design?.ClearOtherSlots ?? false)
+            text += " · clears other slots";
+        return Widgets.Truncate(text, 70);
+    }
+
+    private static bool DrawCleanse()
+    {
+        Widgets.Hint("Empties every gear slot (head, body, hands, legs, feet, ears, neck, wrists, rings). Weapons are left alone.\nPut it before the outfit layers so they start from a bare body; later layers fill the slots they set.");
+        return false;
     }
 
     private string EquipmentSummary(EquipmentLayer e)
@@ -185,6 +197,7 @@ internal sealed class LayerEditor
             VitrineDesignLayer v  => DrawVitrine(v),
             PenumbraAdjustLayer p => DrawPenumbraAdjust(p),
             EquipmentLayer e      => DrawEquipment(e),
+            EquipmentCleanseLayer => DrawCleanse(),
             AppearanceLayer a     => DrawAppearance(a),
             HonorificLayer h      => DrawHonorific(h),
             MoodlesLayer m        => DrawMoodles(m),
@@ -223,9 +236,10 @@ internal sealed class LayerEditor
         if (Widgets.SearchCombo("Vitrine design##vit", preview, _caches.VitrineDesigns, out var picked))
         {
             v.VitrineDesignId  = picked;
-            v.SettingsOverride = null;
-            v.SlotOverride     = null;
-            changed            = true;
+            v.SettingsOverride       = null;
+            v.SlotOverride           = null;
+            v.ClearOtherSlotsOverride = null;
+            changed                  = true;
         }
         if (v.VitrineDesignId != Guid.Empty && design is null)
         {
@@ -252,6 +266,28 @@ internal sealed class LayerEditor
             Widgets.Tooltip("Replaces whole option groups of the design's settings for this pass only.");
             if (v.SettingsOverride is { } overrides && DrawSettingsEditor("vitset", available, overrides, null))
                 changed = true;
+        }
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Clear other slots");
+        Widgets.Tooltip("Empties every gear slot this layer does not fill (weapons stay) before its pieces land, so an outfit worn before does not bleed through.\nMasked-out pieces count as not filled. Put the layer before anything it must not undo.");
+        ImGui.SameLine();
+        if (ImGui.RadioButton($"Design default ({(design.ClearOtherSlots ? "on" : "off")})##vitclear0", v.ClearOtherSlotsOverride is null) && v.ClearOtherSlotsOverride is not null)
+        {
+            v.ClearOtherSlotsOverride = null;
+            changed = true;
+        }
+        ImGui.SameLine();
+        if (ImGui.RadioButton("On##vitclear1", v.ClearOtherSlotsOverride == true) && v.ClearOtherSlotsOverride != true)
+        {
+            v.ClearOtherSlotsOverride = true;
+            changed = true;
+        }
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Off##vitclear2", v.ClearOtherSlotsOverride == false) && v.ClearOtherSlotsOverride != false)
+        {
+            v.ClearOtherSlotsOverride = false;
+            changed = true;
         }
 
         var pieces = design.ResolvedPieces().ToList();

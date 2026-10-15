@@ -46,7 +46,25 @@ public sealed class VitrineDesignLayer : Layer
     /// </summary>
     public EquipSlotFlags? SlotOverride { get; set; }
 
+    /// <summary>
+    /// Whether the layer empties every gear slot it does not fill before its pieces land. Null follows the design's own
+    /// <c>clearOtherSlots</c> flag; true / false override it for this layer.
+    /// </summary>
+    public bool? ClearOtherSlotsOverride { get; set; }
+
     public override string Describe() => $"Vitrine design {VitrineDesignId}";
+}
+
+/// <summary>
+/// Empties every gear slot (head to rings; weapons are left alone) so later layers of the pass start from a bare body
+/// instead of inheriting whatever outfit was worn before. Put it before the outfit layers.
+/// </summary>
+public sealed class EquipmentCleanseLayer : Layer
+{
+    public const string KindName = "EquipmentCleanse";
+    public override string Kind => KindName;
+
+    public override string Describe() => "Equipment cleanse";
 }
 
 /// <summary> A Glamourer design by Guid. Its mod associations carry over as is. </summary>
@@ -363,6 +381,7 @@ public static class LayerKinds
     {
         (GlamourerLayer.KindName,      "Glamourer",          () => new GlamourerLayer()),
         (EquipmentLayer.KindName,      "Equipment Changes",  () => new EquipmentLayer()),
+        (EquipmentCleanseLayer.KindName, "Equipment Cleanse", () => new EquipmentCleanseLayer()),
         (AppearanceLayer.KindName,     "Appearance Changes", () => new AppearanceLayer()),
         (PenumbraAdjustLayer.KindName, "Penumbra Adjust",    () => new PenumbraAdjustLayer()),
         (VitrineDesignLayer.KindName,  "Vitrine Design",     () => new VitrineDesignLayer()),
@@ -372,7 +391,7 @@ public static class LayerKinds
 
     /// <summary> Kinds whose contribution is filtered through the pass's Macro Override (they write Glamourer / mod fields). </summary>
     public static bool IsMaskable(Layer layer)
-        => layer is GlamourerLayer or VitrineDesignLayer or EquipmentLayer or AppearanceLayer;
+        => layer is GlamourerLayer or VitrineDesignLayer or EquipmentLayer or EquipmentCleanseLayer or AppearanceLayer;
 
     public static Layer? Create(string kind)
     {

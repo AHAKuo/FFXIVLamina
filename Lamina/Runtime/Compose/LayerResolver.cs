@@ -51,6 +51,8 @@ public sealed class LayerResolver
                 return ResolvePenumbraAdjust(p, source, out skipReason);
             case EquipmentLayer e:
                 return ResolveEquipment(e, source, out skipReason);
+            case EquipmentCleanseLayer:
+                return ResolveCleanse(source);
             case AppearanceLayer a:
                 return ResolveAppearance(a, source, out skipReason);
             case HonorificLayer h:
@@ -129,7 +131,27 @@ public sealed class LayerResolver
             draft.Items[slot] = new Field<EquipItem>(new EquipItem(piece.ItemId), source);
         }
 
+        // Clearing: every gear slot the layer does not fill (masked-out pieces included) is emptied, so an outfit worn
+        // before does not bleed through. The layer's override wins over the design's flag.
+        if (layer.ClearOtherSlotsOverride ?? design.ClearOtherSlots)
+            AddNothing(draft, source, keep: draft.Items.Keys.ToHashSet());
+
         return draft;
+    }
+
+    /// <summary> Equipment cleanse: Glamourer's "Nothing" in every gear slot that has one (weapons excluded). </summary>
+    private static DesignDraft ResolveCleanse(Provenance source)
+    {
+        var draft = new DesignDraft();
+        AddNothing(draft, source, keep: new HashSet<EquipSlot>());
+        return draft;
+    }
+
+    private static void AddNothing(DesignDraft draft, Provenance source, HashSet<EquipSlot> keep)
+    {
+        foreach (var slot in Enum.GetValues<EquipSlot>())
+            if (!keep.Contains(slot) && NothingItems.IdFor(slot) is { } nothing)
+                draft.Items[slot] = new Field<EquipItem>(new EquipItem(nothing), source);
     }
 
     private static DesignDraft? ResolvePenumbraAdjust(PenumbraAdjustLayer layer, Provenance source, out string? skipReason)

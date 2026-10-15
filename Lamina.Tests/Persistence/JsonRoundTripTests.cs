@@ -108,6 +108,11 @@ public class JsonRoundTripTests
         var vitrine = Assert.IsType<VitrineDesignLayer>(reloaded[0]);
         Assert.Equal(((VitrineDesignLayer)layers[0]).VitrineDesignId, vitrine.VitrineDesignId);
         Assert.Equal(new[] { "Tre S chest" }, vitrine.SettingsOverride!["Body options"]);
+        Assert.Equal(EquipSlotFlags.Body | EquipSlotFlags.Feet, vitrine.SlotOverride);
+        Assert.True(vitrine.ClearOtherSlotsOverride);
+
+        var cleanse = Assert.IsType<EquipmentCleanseLayer>(reloaded[^1]);
+        Assert.False(cleanse.Enabled);
 
         var glam = Assert.IsType<GlamourerLayer>(reloaded[1]);
         Assert.False(glam.Enabled);

@@ -64,6 +64,10 @@ public sealed class VitrineDesignInfo
     [JsonProperty("pieces")]
     public Dictionary<string, VitrinePieceInfo>? Pieces { get; set; }
 
+    /// <summary> The design empties every gear slot its pieces do not fill (IPC 1.3). Weapons are never touched. </summary>
+    [JsonProperty("clearOtherSlots")]
+    public bool ClearOtherSlots { get; set; }
+
     /// <summary> The design's pieces keyed by slot, skipping names this version does not know. </summary>
     public IEnumerable<(EquipSlot Slot, VitrinePieceInfo Piece)> ResolvedPieces()
     {

@@ -85,7 +85,7 @@ public static class Fixtures
     public static List<Layer> AllLayers()
         => new()
         {
-            new VitrineDesignLayer { VitrineDesignId = Guid.NewGuid(), SettingsOverride = new() { ["Body options"] = new() { "Tre S chest" } } },
+            new VitrineDesignLayer { VitrineDesignId = Guid.NewGuid(), SettingsOverride = new() { ["Body options"] = new() { "Tre S chest" } }, SlotOverride = EquipSlotFlags.Body | EquipSlotFlags.Feet, ClearOtherSlotsOverride = true },
             new GlamourerLayer { DesignId = Guid.NewGuid(), Enabled = false },
             new PenumbraAdjustLayer
             {
@@ -121,5 +121,6 @@ public static class Fixtures
                 },
             },
             new PenumbraAdjustLayer { Mods = { new ModState { ModDirectory = "Eve", State = null, Priority = null, Settings = new() { ["Skin"] = new() { "Glossy" } } } } },
+            new EquipmentCleanseLayer { Enabled = false },
         };
 }
