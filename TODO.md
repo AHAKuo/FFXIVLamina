@@ -21,12 +21,6 @@
 - [ ] Honorific `SetCharacterTitle` JSON accepted; Moodles `*ByPtrV2` calls work with the local player address.
 - [ ] Condition sources: housing own / FC house detection, `GetPosture()` poses, walk / run speed thresholds, sanctuary flag.
 - [ ] Jumping / casting don't flicker (hold / linger defaults); zone change while mounted defers the redraw; toggle off restores the character; unassigning the Lamina collection stops mod changes.
-- [ ] Vitrine: mod manager adapter returns metadata (else meta.json fallback), changed-item value types classify correctly, images load.
-
-## B) Vitrine — V1 implemented
-- [x] Mod catalog with classification, incremental scan, cache.
-- [x] Auto designs per mod (deterministic ids), baselines, variants, `designs.json`.
-- [x] `/vit` window: Mods (card grid + details), Collections, Settings, About.
 
 ## C) Release and register in ahadevtools
 - [x] Add `images/icon.png` (512x512).
@@ -43,7 +37,7 @@ Lamina only uses Vitrine for the Vitrine Design layer (design id → mod states)
 - [x] Expose a small Vitrine IPC: list designs, get a design's mod states, designs-changed event, open window, preview (`vitrine/docs/IPC.md`).
 - [x] Replace Lamina's project reference with an optional `VitrineBridge` (like Honorific / Moodles): layer type greyed out when Vitrine is not installed, existing layers skipped with "plugin missing".
 - [x] Vitrine's preview writes go to Penumbra per-player temporary settings with Vitrine's own key.
-- [ ] Register the new plugin in `ahadevtools` and release both.
+- [x] Register the new plugin in `ahadevtools` and release both (Vitrine v0.1.0, 2026-10-15). Vitrine's own work is tracked in `../vitrine/TODO.md`.
 
 ## E) Vitrine designs that also equip (Apply Action)
 Vitrine is adding an **Apply Action** to each design (baseline and variants): which equipment slots the design applies
