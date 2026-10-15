@@ -40,6 +40,12 @@ public sealed class VitrineDesignLayer : Layer
     /// <summary> Option group → selected options. Overrides the design's own settings when set. </summary>
     public Dictionary<string, List<string>>? SettingsOverride { get; set; }
 
+    /// <summary>
+    /// Which of the design's pieces this layer equips. Null = every slot the design affects. A mask lets two Vitrine
+    /// designs combine (the body of one mod, the feet of another); the mods themselves are always applied in full.
+    /// </summary>
+    public EquipSlotFlags? SlotOverride { get; set; }
+
     public override string Describe() => $"Vitrine design {VitrineDesignId}";
 }
 

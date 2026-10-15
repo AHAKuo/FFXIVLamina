@@ -121,6 +121,14 @@ public sealed class LayerResolver
             }, source));
         }
 
+        // The design's pieces (its affected slots, one item each) become equipment, narrowed by the layer's slot mask.
+        foreach (var (slot, piece) in design.ResolvedPieces())
+        {
+            if (layer.SlotOverride is { } mask && !mask.Has(slot))
+                continue;
+            draft.Items[slot] = new Field<EquipItem>(new EquipItem(piece.ItemId), source);
+        }
+
         return draft;
     }
 

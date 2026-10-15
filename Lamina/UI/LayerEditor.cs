@@ -128,7 +128,7 @@ internal sealed class LayerEditor
         => layer switch
         {
             GlamourerLayer g      => _caches.DesignName(g.DesignId),
-            VitrineDesignLayer v  => _caches.VitrineDesignName(v.VitrineDesignId),
+            VitrineDesignLayer v  => VitrineSummary(v),
             PenumbraAdjustLayer p => $"{p.Mods.Count} mod(s)",
             EquipmentLayer e      => EquipmentSummary(e),
             AppearanceLayer a     => AppearanceSummary(a),
@@ -136,6 +136,17 @@ internal sealed class LayerEditor
             MoodlesLayer m        => $"+{m.Add.Count + m.AddPresets.Count} / −{m.Remove.Count}",
             _                     => layer.Describe(),
         };
+
+    private string VitrineSummary(VitrineDesignLayer v)
+    {
+        var name = _caches.VitrineDesignName(v.VitrineDesignId);
+        if (v.SlotOverride is not { } mask)
+            return name;
+
+        var design = _s.Vitrine.GetDesign(v.VitrineDesignId);
+        var slots  = design?.ResolvedPieces().Where(p => mask.Has(p.Slot)).Select(p => Widgets.Humanize(p.Slot.ToString())).ToList() ?? new List<string>();
+        return Widgets.Truncate($"{name} · {(slots.Count == 0 ? "no slots" : string.Join(", ", slots))}", 70);
+    }
 
     private string EquipmentSummary(EquipmentLayer e)
     {
@@ -213,6 +224,7 @@ internal sealed class LayerEditor
         {
             v.VitrineDesignId  = picked;
             v.SettingsOverride = null;
+            v.SlotOverride     = null;
             changed            = true;
         }
         if (v.VitrineDesignId != Guid.Empty && design is null)
@@ -227,19 +239,58 @@ internal sealed class LayerEditor
         var mod = design.Mods.FirstOrDefault();
         if (mod is null)
             return changed;
-        var available = _caches.ModSettings(mod.ModDirectory);
-        if (available is null || available.Count == 0)
-            return changed;
 
-        var hasOverride = v.SettingsOverride is not null;
-        if (ImGui.Checkbox("Override settings##vit", ref hasOverride))
+        var available = _caches.ModSettings(mod.ModDirectory);
+        if (available is { Count: > 0 })
         {
-            v.SettingsOverride = hasOverride ? new Dictionary<string, List<string>>() : null;
-            changed            = true;
+            var hasOverride = v.SettingsOverride is not null;
+            if (ImGui.Checkbox("Override settings##vit", ref hasOverride))
+            {
+                v.SettingsOverride = hasOverride ? new Dictionary<string, List<string>>() : null;
+                changed            = true;
+            }
+            Widgets.Tooltip("Replaces whole option groups of the design's settings for this pass only.");
+            if (v.SettingsOverride is { } overrides && DrawSettingsEditor("vitset", available, overrides, null))
+                changed = true;
         }
-        Widgets.Tooltip("Replaces whole option groups of the design's settings for this pass only.");
-        if (v.SettingsOverride is { } overrides && DrawSettingsEditor("vitset", available, overrides, null))
-            changed = true;
+
+        var pieces = design.ResolvedPieces().ToList();
+        if (pieces.Count == 0)
+        {
+            Widgets.Hint("This design equips no pieces (no equippable items, or Vitrine is older than 0.3): only its mod settings are layered.");
+            return changed;
+        }
+
+        ImGui.Spacing();
+        var hasSlots = v.SlotOverride is not null;
+        if (ImGui.Checkbox("Override slots##vit", ref hasSlots))
+        {
+            v.SlotOverride = hasSlots ? pieces.Aggregate(EquipSlotFlags.None, (f, p) => f | p.Slot.ToFlag()) : null;
+            changed        = true;
+        }
+        Widgets.Tooltip("Which of the design's pieces this layer equips. Untick slots to combine pieces from several Vitrine designs\n(the body of one mod, the feet of another). The mod itself is still applied in full.");
+        if (v.SlotOverride is { } mask)
+        {
+            using var table = ImRaii.Table("##vitslots", 4, ImGuiTableFlags.SizingStretchSame);
+            if (table)
+                foreach (var (slot, piece) in pieces)
+                {
+                    ImGui.TableNextColumn();
+                    var on = mask.Has(slot);
+                    if (ImGui.Checkbox($"{Widgets.Humanize(slot.ToString())}##{slot}", ref on))
+                    {
+                        mask           = on ? mask | slot.ToFlag() : mask & ~slot.ToFlag();
+                        v.SlotOverride = mask;
+                        changed        = true;
+                    }
+                    Widgets.Tooltip(piece.ItemName);
+                }
+        }
+        else
+        {
+            Widgets.Hint("Equips: " + Widgets.Truncate(string.Join(", ", pieces.Select(p => $"{Widgets.Humanize(p.Slot.ToString())}: {p.Piece.ItemName}")), 90));
+        }
+
         return changed;
     }
 

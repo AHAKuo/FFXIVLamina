@@ -1,3 +1,4 @@
+using Lamina.Models;
 using Newtonsoft.Json;
 
 namespace Lamina.Ipc;
@@ -24,6 +25,16 @@ public sealed class VitrineModInfo
     public Dictionary<string, List<string>>? Settings { get; set; }
 }
 
+/// <summary> One piece a Vitrine design equips (IPC 1.2 `pieces`). </summary>
+public sealed class VitrinePieceInfo
+{
+    [JsonProperty("itemId")]
+    public ulong ItemId { get; set; }
+
+    [JsonProperty("itemName")]
+    public string ItemName { get; set; } = string.Empty;
+}
+
 /// <summary> A Vitrine design (a mod with baseline settings, or a user variant), as published over IPC. </summary>
 public sealed class VitrineDesignInfo
 {
@@ -45,6 +56,23 @@ public sealed class VitrineDesignInfo
 
     [JsonProperty("mods")]
     public List<VitrineModInfo> Mods { get; set; } = new();
+
+    /// <summary>
+    /// What the design equips, resolved by Vitrine: Glamourer slot name (Head, Body, ...) → item, one per slot the design
+    /// affects (IPC 1.2). Null or empty from older Vitrine versions or for mods without equippable items.
+    /// </summary>
+    [JsonProperty("pieces")]
+    public Dictionary<string, VitrinePieceInfo>? Pieces { get; set; }
+
+    /// <summary> The design's pieces keyed by slot, skipping names this version does not know. </summary>
+    public IEnumerable<(EquipSlot Slot, VitrinePieceInfo Piece)> ResolvedPieces()
+    {
+        if (Pieces is null)
+            yield break;
+        foreach (var (name, piece) in Pieces)
+            if (piece is not null && Enum.TryParse<EquipSlot>(name, true, out var slot))
+                yield return (slot, piece);
+    }
 }
 
 /// <summary>

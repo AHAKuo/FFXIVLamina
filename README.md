@@ -33,10 +33,10 @@ Updates arrive through the same installer like any other plugin. The repository 
 - Penumbra Adjust with per-setting "applies" checkboxes: a pass can change one option group of a mod an earlier pass enabled; everything unticked is inherited from the earlier pass or the Lamina collection.
 - Application of Honorific titles.
 - Application of Moodles states.
-- Vitrine integration (optional): use designs from the separate Vitrine plugin as layers.
+- Vitrine integration (optional): use designs from the separate Vitrine plugin as layers, with a per-layer slot mask to combine pieces of several designs.
 
 ## Virtual Designs
 A Virtual Design is a design created by combining multiple different rulesets and combining the resulting Glamourer, Honorific, Moodles, and Penumbra statuses into one final design. This design is applied in one pass with efficient handling to prevent slow flickers or heavy condition swapping. The character is drawn ONCE after the virtual design is determined.
 
 ## Works with Vitrine (separate plugin, optional)
-Vitrine is ahadev's standalone mod browser: it organizes your Penumbra mods by what they change, shows their display photos, lets you try a mod on your character (mod + a full set of its affected items) and turns each mod into a design with your baseline settings. Lamina does not need it to run. When Vitrine is installed, Lamina finds it automatically and its designs become a layer type ("Vitrine Design") you can use in any pass. Repository: https://github.com/AHAKuo/FFXIVVitrine
+Vitrine is ahadev's standalone mod browser: it organizes your Penumbra mods by what they change, shows their display photos, lets you try a mod on your character (mod + a full set of its affected items) and turns each mod into a design with your baseline settings. Lamina does not need it to run. When Vitrine is installed, Lamina finds it automatically and its designs become a layer type ("Vitrine Design") you can use in any pass: the layer carries the design's mod settings (overridable per pass) and the pieces the design equips (its affected slots). "Override slots" narrows those pieces per layer, so one pass can take the body from one Vitrine design and the boots from another; the mods themselves are always applied in full. Needs Vitrine 0.3 or newer for pieces. Repository: https://github.com/AHAKuo/FFXIVVitrine
