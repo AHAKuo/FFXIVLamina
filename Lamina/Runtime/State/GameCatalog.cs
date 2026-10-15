@@ -20,6 +20,9 @@ public sealed record EquipItemEntry(uint Id, string Name, EquipSlot Slot, string
 /// <summary> One dye as the catalog sees it (Rgb is 0xRRGGBB). </summary>
 public sealed record StainEntry(byte Id, string Name, uint Rgb);
 
+/// <summary> One facewear row of the Glasses sheet. </summary>
+public sealed record GlassesEntry(ushort Id, string Name, uint IconId);
+
 /// <summary>
 /// Game data lookups (Lumina sheets through <see cref="IDataManager"/>) with lazy caches. Used by the
 /// <see cref="StateTracker"/> to classify state and by the UI pickers to show names. All lookups return "#id"
@@ -46,6 +49,8 @@ public sealed class GameCatalog
     private readonly Lazy<IReadOnlyList<EquipItemEntry>> _equipItems;
     private readonly Lazy<IReadOnlyDictionary<uint, EquipItemEntry>> _equipItemById;
     private readonly Lazy<IReadOnlyList<StainEntry>> _stains;
+    private readonly Lazy<IReadOnlyList<GlassesEntry>> _glasses;
+    private readonly Lazy<IReadOnlyDictionary<ushort, GlassesEntry>> _glassesById;
 
     public GameCatalog(IDataManager data, IPluginLog log)
     {
@@ -55,6 +60,8 @@ public sealed class GameCatalog
         _equipItems    = new(LoadEquipItems);
         _equipItemById = new(() => _equipItems.Value.ToDictionary(i => i.Id));
         _stains        = new(LoadStains);
+        _glasses       = new(LoadGlasses);
+        _glassesById   = new(() => _glasses.Value.ToDictionary(g => g.Id));
 
         _territories    = new(LoadTerritories);
         _territoryById  = new(() => _territories.Value.ToDictionary(t => t.Id));
@@ -159,6 +166,15 @@ public sealed class GameCatalog
 
     /// <summary> Every dye (row 0 = "No Color"), in sheet order. </summary>
     public IReadOnlyList<StainEntry> Stains => _stains.Value;
+
+    /// <summary> Every facewear item, sorted by name. </summary>
+    public IReadOnlyList<GlassesEntry> Glasses => _glasses.Value;
+
+    /// <summary> Display name of a bonus item id, including Glamourer's "Nothing". </summary>
+    public string BonusItemName(ulong id)
+        => BonusItems.IsNothing(id) ? "Nothing"
+         : BonusItems.RowOf(id) is { } row && _glassesById.Value.GetValueOrDefault(row) is { } g ? g.Name
+         : $"facewear #{id}";
 
     public string StainName(byte id)
         => id == 0 ? "No dye" : _stains.Value.FirstOrDefault(s => s.Id == id)?.Name ?? $"#{id}";
@@ -304,6 +320,30 @@ public sealed class GameCatalog
         if (c.FingerR != 0)  return EquipSlot.RFinger;
         if (c.FingerL != 0)  return EquipSlot.LFinger;
         return null;
+    }
+
+    private IReadOnlyList<GlassesEntry> LoadGlasses()
+    {
+        var result = new List<GlassesEntry>();
+        try
+        {
+            var sheet = _data.GetExcelSheet<Lumina.Excel.Sheets.Glasses>();
+            if (sheet is null)
+                return result;
+            foreach (var row in sheet)
+            {
+                var name = row.Name.ExtractText();
+                if (row.RowId == 0 || row.RowId > ushort.MaxValue || string.IsNullOrWhiteSpace(name))
+                    continue;
+                result.Add(new GlassesEntry((ushort)row.RowId, name, (uint)row.Icon));
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Lamina: failed to load the Glasses sheet.");
+        }
+
+        return result.OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Id).ToList();
     }
 
     private IReadOnlyList<StainEntry> LoadStains()

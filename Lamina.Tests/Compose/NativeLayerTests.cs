@@ -54,6 +54,35 @@ public class NativeLayerTests
     }
 
     [Fact]
+    public void Equipment_FacewearLandsInTheDraftAndTheState()
+    {
+        var layer = new EquipmentLayer { Bonus = { [BonusSlot.Glasses] = BonusItems.IdFor(159) } };
+        var draft = Resolver().Resolve(layer, Src, out var reason)!;
+
+        Assert.Null(reason);
+        Assert.Equal(BonusItems.IdFor(159), draft.Bonus[BonusSlot.Glasses].Value);
+        Assert.Equal(Src, draft.Bonus[BonusSlot.Glasses].Source);
+
+        var state   = GlamourerStateBuilder.Build(draft.Freeze(Guid.Empty, null, Array.Empty<Guid>(), Array.Empty<Guid>()));
+        var glasses = (JObject)state["Bonus"]!["Glasses"]!;
+        Assert.Equal(562949953421471ul, glasses["BonusId"]!.Value<ulong>());
+        Assert.True(glasses["Apply"]!.Value<bool>());
+    }
+
+    [Fact]
+    public void BonusItemIds_MatchGlamourersEncoding()
+    {
+        // Values taken from the user's Glamourer design files: Gold Under-rim Glasses (row 159) and an empty facewear slot.
+        Assert.Equal(562949953421471ul, BonusItems.IdFor(159));
+        Assert.Equal(844424946909184ul, BonusItems.NothingFor(BonusSlot.Glasses));
+        Assert.True(BonusItems.IsNothing(844424946909184ul));
+        Assert.False(BonusItems.IsNothing(562949953421471ul));
+        Assert.Equal((ushort)159, BonusItems.RowOf(562949953421471ul));
+        Assert.Null(BonusItems.RowOf(844424946909184ul));
+        Assert.Null(BonusItems.RowOf(10032ul));
+    }
+
+    [Fact]
     public void Equipment_WithNothingSetIsSkipped()
     {
         var draft = Resolver().Resolve(new EquipmentLayer { Slots = { [EquipSlot.Head] = new SlotEdit() } }, Src, out var reason);

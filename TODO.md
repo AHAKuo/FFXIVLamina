@@ -72,10 +72,10 @@ any other layer and Lamina applies them in the same single batch.
 - [x] Body Type is not offered and never sent (values other than 1 are NPC models and crash the game); Race follows Clan.
 - [ ] Verify in game: "Nothing" ids are accepted by ApplyState for every gear slot; icon pickers render; colour swatches
       match the character creator; weapons pair main / off hand sensibly (no "Nothing" offered for weapons).
-- [ ] **Facewear (Glasses) slot in the Equipment layer** — later. Glamourer stores it under `Equipment.Glasses` as a
-      bonus item whose id is a custom encoding, not a `Glasses` sheet row id; work out the encoding from Glamourer /
-      Penumbra.GameData (`BonusItemId`), load the `Glasses` sheet for names + icons, add `EquipSlot`-like handling in
-      `EquipmentLayer.Slots`, the editor row (no dyes, no crest) and the state builder, with a "Nothing" equivalent.
+- [x] **Facewear (Glasses) slot in the Equipment layer** (v0.2.1): `EquipmentLayer.Bonus` holds Glamourer bonus item
+      ids (`BonusItems`: Glasses row | 1<<49; "Nothing" = 3<<48 | 1<<24, verified against the user's design files),
+      names from the `Glasses` sheet, editor row without dyes / crest, Preview shows the name.
+- [ ] Verify in game: facewear "Nothing" clears the slot; a chosen pair shows up; Macro Override masks include it.
 
 ## G) Penumbra Adjust: per-setting "applies" checkboxes and Penumbra defaults — done (2026-10-15, v0.2.0)
 One Penumbra layer, not two. Mod entries now merge per part (enabled flag, priority, each option group), so a later

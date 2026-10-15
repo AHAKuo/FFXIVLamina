@@ -106,7 +106,8 @@ public static class Fixtures
                     [EquipSlot.Body] = new SlotEdit { ApplyStains = true, Stain1 = 5, Stain2 = 7, Crest = true },
                     [EquipSlot.Head] = new SlotEdit { ItemId = 10032 },
                 },
-                Meta = { [MetaIndex.HatVisible] = false, [MetaIndex.WeaponVisible] = true },
+                Bonus = { [BonusSlot.Glasses] = BonusItems.IdFor(159) },
+                Meta  = { [MetaIndex.HatVisible] = false, [MetaIndex.WeaponVisible] = true },
             },
             new AppearanceLayer
             {

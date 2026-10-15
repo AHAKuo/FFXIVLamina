@@ -101,7 +101,7 @@ internal sealed class PreviewPanel
         foreach (var (slot, f) in d.Crests.OrderBy(kv => kv.Key))
             yield return ($"{Widgets.Humanize(slot.ToString())} crest", f.Value ? "on" : "off", f.Source);
         foreach (var (slot, f) in d.Bonus.OrderBy(kv => kv.Key))
-            yield return ($"{Widgets.Humanize(slot.ToString())}", $"bonus {f.Value}", f.Source);
+            yield return (slot == BonusSlot.Glasses ? "Facewear" : Widgets.Humanize(slot.ToString()), _s.Catalog.BonusItemName(f.Value), f.Source);
         if (d.ModelId is { } model)
             yield return ("Model", model.Value.ToString(), model.Source);
         foreach (var (idx, f) in d.Customize.OrderBy(kv => kv.Key))

@@ -159,6 +159,8 @@ public sealed class LayerResolver
             if (edit.Crest is { } crest && CrestSlots.Contains(slot))
                 draft.Crests[slot] = new Field<bool>(crest, source);
         }
+        foreach (var (slot, id) in layer.Bonus)
+            draft.Bonus[slot] = new Field<ulong>(id, source);
 
         foreach (var (index, value) in layer.Meta)
             if (index != MetaIndex.Wetness)

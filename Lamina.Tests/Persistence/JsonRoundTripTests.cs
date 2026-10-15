@@ -145,6 +145,7 @@ public class JsonRoundTripTests
         Assert.Equal((byte)7, equipment.Slots[EquipSlot.Body].Stain2);
         Assert.True(equipment.Slots[EquipSlot.Body].Crest);
         Assert.Equal(10032ul, equipment.Slots[EquipSlot.Head].ItemId);
+        Assert.Equal(BonusItems.IdFor(159), equipment.Bonus[BonusSlot.Glasses]);
         Assert.False(equipment.Meta[MetaIndex.HatVisible]);
         Assert.True(equipment.Meta[MetaIndex.WeaponVisible]);
 

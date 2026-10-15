@@ -149,6 +149,10 @@ internal sealed class LayerEditor
             else if (edit.Crest is { } crest)
                 parts.Add($"{Widgets.Humanize(slot.ToString())}: crest {(crest ? "on" : "off")}");
         }
+        foreach (var (slot, id) in e.Bonus.OrderBy(kv => kv.Key))
+        {
+            parts.Add($"{slot}: {_s.Catalog.BonusItemName(id)}");
+        }
         foreach (var (index, on) in e.Meta)
             parts.Add($"{Widgets.Humanize(index.ToString())} {(on ? "on" : "off")}");
         return parts.Count == 0 ? "(nothing set)" : Widgets.Truncate(string.Join(", ", parts), 70);
@@ -509,10 +513,14 @@ internal sealed class LayerEditor
 
     // ---- Equipment Changes --------------------------------------------------------------------------
 
+    private static string BonusSlotLabel(BonusSlot slot)
+        => slot == BonusSlot.Glasses ? "Facewear" : slot.ToString();
+
     private bool DrawEquipment(EquipmentLayer e)
     {
         var changed = false;
-        EquipSlot? removeSlot = null;
+        EquipSlot? removeSlot  = null;
+        BonusSlot? removeBonus = null;
         using (var table = ImRaii.Table("##slots", 5, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH))
         {
             if (table)
@@ -587,6 +595,36 @@ internal sealed class LayerEditor
                     if (Widgets.IconButton(FontAwesomeIcon.Trash, "Remove slot"))
                         removeSlot = slot;
                 }
+
+                // Bonus slots (facewear): item only, no dyes or crest.
+                foreach (var slot in Enum.GetValues<BonusSlot>())
+                {
+                    if (!e.Bonus.TryGetValue(slot, out var bonusId))
+                        continue;
+                    using var id = ImRaii.PushId(1000 + (int)slot);
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted(BonusSlotLabel(slot));
+
+                    ImGui.TableNextColumn();
+                    var on = true;
+                    using (ImRaii.Disabled())
+                        ImGui.Checkbox("##bonusSet", ref on);
+                    Widgets.Tooltip("This layer sets the facewear (remove the row to keep it).");
+                    ImGui.SameLine();
+                    if (Widgets.SearchCombo("##bonus", _s.Catalog.BonusItemName(bonusId), _caches.BonusItemsFor(slot), out var picked, 240))
+                    {
+                        e.Bonus[slot] = picked;
+                        changed       = true;
+                    }
+
+                    ImGui.TableNextColumn();
+                    Widgets.Hint("no dyes");
+                    ImGui.TableNextColumn();
+                    ImGui.TableNextColumn();
+                    if (Widgets.IconButton(FontAwesomeIcon.Trash, "Remove slot"))
+                        removeBonus = slot;
+                }
             }
         }
         if (removeSlot is { } rs)
@@ -594,20 +632,34 @@ internal sealed class LayerEditor
             e.Slots.Remove(rs);
             changed = true;
         }
+        if (removeBonus is { } rb)
+        {
+            e.Bonus.Remove(rb);
+            changed = true;
+        }
 
-        var free = Enum.GetValues<EquipSlot>().Where(s => !e.Slots.ContainsKey(s)).ToList();
-        if (free.Count > 0)
+        var free      = Enum.GetValues<EquipSlot>().Where(s => !e.Slots.ContainsKey(s)).ToList();
+        var freeBonus = Enum.GetValues<BonusSlot>().Where(s => !e.Bonus.ContainsKey(s)).ToList();
+        if (free.Count + freeBonus.Count > 0)
         {
             if (ImGui.SmallButton("+ Add slot"))
                 ImGui.OpenPopup("##addSlot");
             using var popup = ImRaii.Popup("##addSlot");
             if (popup)
+            {
                 foreach (var slot in free)
                     if (ImGui.Selectable(Widgets.Humanize(slot.ToString())))
                     {
                         e.Slots[slot] = new SlotEdit();
                         changed       = true;
                     }
+                foreach (var slot in freeBonus)
+                    if (ImGui.Selectable(BonusSlotLabel(slot)))
+                    {
+                        e.Bonus[slot] = BonusItems.NothingFor(slot);
+                        changed       = true;
+                    }
+            }
         }
 
         ImGui.Spacing();

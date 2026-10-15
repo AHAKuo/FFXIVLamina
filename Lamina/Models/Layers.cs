@@ -82,11 +82,14 @@ public sealed class EquipmentLayer : Layer
     /// <summary> Slot → edit. Only slots present are touched. </summary>
     public Dictionary<EquipSlot, SlotEdit> Slots { get; set; } = new();
 
+    /// <summary> Bonus slot (facewear) → Glamourer bonus item id (see <see cref="BonusItems"/>). Only slots present are touched. </summary>
+    public Dictionary<BonusSlot, ulong> Bonus { get; set; } = new();
+
     /// <summary> Visibility toggles (HatVisible, VisorToggled, WeaponVisible, VieraEarsVisible). Wetness belongs to the Appearance layer. </summary>
     public Dictionary<MetaIndex, bool> Meta { get; set; } = new();
 
     public override string Describe()
-        => $"Equipment ({Slots.Count} slot(s){(Meta.Count > 0 ? $", {Meta.Count} toggle(s)" : string.Empty)})";
+        => $"Equipment ({Slots.Count + Bonus.Count} slot(s){(Meta.Count > 0 ? $", {Meta.Count} toggle(s)" : string.Empty)})";
 }
 
 /// <summary> One slot of an <see cref="EquipmentLayer"/>. Each part is optional. </summary>
@@ -135,6 +138,35 @@ public static class NothingItems
     /// <summary> True for any of the ids above (any slot). </summary>
     public static bool IsNothing(ulong itemId)
         => itemId is >= uint.MaxValue - 128 - 14 and <= uint.MaxValue - 128;
+}
+
+/// <summary>
+/// Glamourer's ids for bonus items (facewear), from Penumbra.GameData's CustomItemId: a real pair of glasses is its
+/// Glasses sheet row with bit 49 set; "Nothing" is a custom bonus item (bits 48 and 49) with model 0 and the slot flag
+/// (Glasses = 1) in bits 24..31.
+/// </summary>
+public static class BonusItems
+{
+    private const ulong CustomFlag = 1ul << 48;
+    private const ulong BonusFlag  = 1ul << 49;
+
+    private static ulong SlotFlag(BonusSlot slot)
+        => slot switch { BonusSlot.Glasses => 1, _ => 0 };
+
+    /// <summary> Bonus item id of a Glasses sheet row. </summary>
+    public static ulong IdFor(ushort glassesRow)
+        => glassesRow | BonusFlag;
+
+    /// <summary> Glamourer's "Nothing" for the slot. </summary>
+    public static ulong NothingFor(BonusSlot slot)
+        => CustomFlag | BonusFlag | (SlotFlag(slot) << 24);
+
+    public static bool IsNothing(ulong id)
+        => (id & (CustomFlag | BonusFlag)) == (CustomFlag | BonusFlag) && (id & 0xFFFFFF) == 0;
+
+    /// <summary> The Glasses sheet row of a bonus item id, or null for custom ids ("Nothing") and plain item ids. </summary>
+    public static ushort? RowOf(ulong id)
+        => (id & BonusFlag) != 0 && (id & CustomFlag) == 0 ? (ushort)(id & 0xFFFF) : null;
 }
 
 /// <summary>

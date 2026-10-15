@@ -169,6 +169,18 @@ internal sealed class UiCaches : IDisposable
         return list;
     }
 
+    private IReadOnlyList<Widgets.PickItem<ulong>>? _glassesItems;
+
+    /// <summary> Facewear choices for a bonus slot: "Nothing" first, then every Glasses row as a bonus item id. </summary>
+    public IReadOnlyList<Widgets.PickItem<ulong>> BonusItemsFor(BonusSlot slot)
+    {
+        if (_glassesItems is not null)
+            return _glassesItems;
+        var list = new List<Widgets.PickItem<ulong>> { new(BonusItems.NothingFor(slot), "Nothing", "empty slot") };
+        list.AddRange(_s.Catalog.Glasses.Select(g => new Widgets.PickItem<ulong>(BonusItems.IdFor(g.Id), g.Name, null)));
+        return _glassesItems = list;
+    }
+
     /// <summary> The local player's customize bytes, re-read at most once per second. Null when not logged in. </summary>
     public byte[]? CurrentCustomize()
     {
