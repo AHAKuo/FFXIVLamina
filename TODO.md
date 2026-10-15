@@ -136,6 +136,18 @@ Decals on bodies or gear mean producing a texture, not toggling a setting. Two s
       a UV template preview; seams distort; Dawntrail skin uses diffuse + mask + normal + index (colour decals in the
       diffuse first, other maps later); encode cost must never land on the apply path.
 
+## I) Sub-passes
+A pass can contain sub-passes that are gated by their parent: a sub-pass is only evaluated while the parent pass
+matches, and its layers stack on top of the parent's.
+- [ ] Model: `Pass.SubPasses` (list of `Pass`, same shape: name, enabled, conditions, layers, macro override); nesting
+      depth 1 to start (sub-passes have no sub-passes), JSON round trip, profile import / export warnings.
+- [ ] Evaluation: parent conditions gate the whole subtree; a sub-pass adds its layers after the parent's when its own
+      conditions match (same hold / linger rules); the evaluation report lists matched sub-passes under their parent.
+- [ ] Composition: parent layers first, then each matching sub-pass in order; the parent's macro override applies to the
+      subtree unless the sub-pass sets its own.
+- [ ] UI: sub-passes shown indented under the parent in the Passes tab (add / reorder / move out to a top-level pass);
+      the debug overlay shows parent → sub-pass; "Add sub-pass" on a pass.
+
 ## Later (TDD section 14)
 - [ ] Moodles presets: expand to statuses so cleanup can remove them (needs preset-info IPC in the bridge).
 - [ ] Other targets (characters / players).
