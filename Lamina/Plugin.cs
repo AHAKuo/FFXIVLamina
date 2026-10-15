@@ -34,6 +34,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem _windowSystem = new("Lamina");
 
     private LaminaEngine? _engine;
+    private LaminaIpc? _ipc;
     private ProfileStore? _profiles;
     private LaminaWindow? _window;
 
@@ -90,6 +91,7 @@ public sealed class Plugin : IDalamudPlugin
         var engine = Track(new LaminaEngine(profiles, tracker, evaluator, compositor, resolver, cache, glamourer, penumbra, honorific, moodles,
             vitrine, Framework, ObjectTable, ClientState, Condition, catalog, Log, clock));
         _engine = engine;
+        _ipc    = new LaminaIpc(PluginInterface, Framework, engine, Log);
 
         Services = new LaminaServices
         {
@@ -156,6 +158,16 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi -= OpenMainUi;
         _windowSystem.RemoveAllWindows();
         _window?.Dispose();
+
+        // IPC before the engine: nobody may ask for a reapply while it is tearing down.
+        try
+        {
+            _ipc?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "IPC dispose failed.");
+        }
 
         // Engine first: it runs the unload cleanup while the bridges are still alive.
         try
