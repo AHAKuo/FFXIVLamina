@@ -16,11 +16,44 @@
 - [x] Unit tests (persistence, compose, state, engine, bridges fakes, vitrine): 209 after v0.2.0.
 
 ### In-game verification (build order step 1 and 9 of the TDD)
-- [ ] Glamourer accepts the built state JObject; `Lock` holds against automation on zone / job / gearset change (`StateFinalized` re-assert path).
-- [ ] Penumbra: Lamina collection found, temp settings written with the negative key, `RemoveAllTemporaryModSettings` clears only Lamina's, one redraw per real change, no redraw when nothing changed.
-- [ ] Honorific `SetCharacterTitle` JSON accepted; Moodles `*ByPtrV2` calls work with the local player address.
-- [ ] Condition sources: housing own / FC house detection, `GetPosture()` poses, walk / run speed thresholds, sanctuary flag.
-- [ ] Jumping / casting don't flicker (hold / linger defaults); zone change while mounted defers the redraw; toggle off restores the character; unassigning the Lamina collection stops mod changes.
+- [x] Glamourer accepts the built state JObject (verified 2026-10-15). Note: Glamourer's own automation conflicts with
+      Lamina; `Lock` does not reliably hold against it. Glamourer automation must be disabled (or Glamourer not driving
+      the character) while Lamina is on. Document this in the README.
+- [x] Penumbra (verified 2026-10-15): Lamina collection found (when missing Lamina waits for it to be created and
+      applies nothing), temp settings written with the negative key so `RemoveAllTemporaryModSettings` clears only
+      Lamina's, one redraw per real change, no redraw when nothing changed.
+- [ ] Create the Lamina collection from the plugin when it is missing: a button in Settings / the status banner.
+      Penumbra's IPC (`Penumbra.Api/Api/Collection.cs`) can list and assign collections but has no create call, so
+      this needs either a new IPC on the Penumbra side or writing the collection file into Penumbra's config folder
+      and asking it to reload. Until then the status banner should tell the user to create "Lamina" by hand.
+- [x] Honorific `SetCharacterTitle` JSON accepted (verified 2026-10-15).
+- [ ] Moodles `*ByPtrV2` calls work with the local player address.
+- [ ] Zone change while mounted defers the redraw; toggle off restores the character; unassigning the Lamina collection
+      stops mod changes.
+- Condition sources and flicker: see section B.
+
+## B) Conditions — in-game verification per kind
+Each kind has its own box so this list can grow without blocking section A. Tick a kind once every field it exposes
+has been exercised at least once; note partial coverage inline.
+- [ ] Time (ET / LT clock, ranges that wrap midnight).
+- [ ] Calendar (date range, weekdays, seasonal event).
+- [ ] Weather (weather ids, groups: Clear / Overcast / Wet / Stormy / Windy / Hot / Cold / Arcane).
+- [ ] Biome — desert verified 2026-10-15; other biomes open.
+- [ ] Location (territory, region, place name, world, sanctuary flag, indoors, inn room, home world).
+- [ ] Duty (content types, specific content ids, in FATE).
+- [ ] Housing — own house verified 2026-10-15; FC house, apartment, chambers, other, district / ward / plot, inside open.
+- [ ] Social (solo / party / alliance, size min / max, named players).
+- [ ] Character (race, clan, gender, named characters).
+- [ ] Job — job ids verified 2026-10-15; roles, disciplines, gearset ids, level range, weapon drawn open.
+- [ ] Online status (OnlineStatus ids, e.g. Role-playing).
+- [ ] Status effect (status ids, min stacks).
+- [ ] Movement (idle, walking, running, sprinting, jumping, falling, mounted, pillion, flying, swimming, diving,
+      being moved; walk / run speed thresholds).
+- [ ] Body state (dead, in combat, casting, wet, weapon drawn, transformed, disguised, loading, low HP %).
+- [ ] Emote — sitting pose verified 2026-10-15; emote ids, looping only, ground sitting / dozing / standing poses open.
+- [ ] Activity (crafting, gathering, fishing, performing, NPC dialogue, cutscene, GPose, trading, mini game,
+      retainer / market, minion summoned).
+- [ ] Hold / linger: jumping and casting don't flicker with the defaults.
 
 ## C) Release and register in ahadevtools
 - [x] Add `images/icon.png` (512x512).
@@ -69,7 +102,7 @@ any other layer and Lamina applies them in the same single batch.
 - [x] **Facewear (Glasses) slot in the Equipment layer** (v0.2.1): `EquipmentLayer.Bonus` holds Glamourer bonus item
       ids (`BonusItems`: Glasses row | 1<<49; "Nothing" = 3<<48 | 1<<24, verified against the user's design files),
       names from the `Glasses` sheet, editor row without dyes / crest, Preview shows the name.
-- [ ] Verify in game: facewear "Nothing" clears the slot; a chosen pair shows up; Macro Override masks include it.
+- [x] Verify in game (2026-10-15): facewear "Nothing" clears the slot; a chosen pair shows up; Macro Override masks include it.
 
 ## G) Penumbra Adjust: per-setting "applies" checkboxes and Penumbra defaults — done (2026-10-15, v0.2.0)
 One Penumbra layer, not two. Mod entries now merge per part (enabled flag, priority, each option group), so a later
