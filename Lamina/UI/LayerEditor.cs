@@ -648,22 +648,39 @@ internal sealed class LayerEditor
         using var combo = ImRaii.Combo("##combo", current?.Name ?? (stain == 0 ? "No dye" : $"#{stain}"));
         if (!combo)
             return false;
+        if (ImGui.IsWindowAppearing())
+        {
+            _stainSearch = string.Empty;
+            ImGui.SetKeyboardFocusHere();
+        }
+        ImGui.SetNextItemWidth(-1);
+        ImGui.InputTextWithHint("##search", "Search…", ref _stainSearch, 64);
+        var filter = _stainSearch.Trim();
+        using var list = ImRaii.Child("##list", new Vector2(0, 240 * Widgets.Scale), false);
+        if (!list)
+            return false;
         foreach (var s in stains)
         {
+            var name = s.Id == 0 ? "No dye" : s.Name;
+            if (filter.Length > 0 && !name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                continue;
             using var sid = ImRaii.PushId(s.Id);
             if (s.Id != 0)
             {
                 ImGui.ColorButton("##c", RgbToVec(s.Rgb), ImGuiColorEditFlags.NoTooltip, new Vector2(ImGui.GetFrameHeight()));
                 ImGui.SameLine();
             }
-            if (ImGui.Selectable(s.Id == 0 ? "No dye" : s.Name, s.Id == stain))
+            if (ImGui.Selectable(name, s.Id == stain))
             {
                 stain   = s.Id;
                 changed = true;
+                ImGui.CloseCurrentPopup();
             }
         }
         return changed;
     }
+
+    private string _stainSearch = string.Empty;
 
     private static Vector4 RgbToVec(uint rgb)
         => new(((rgb >> 16) & 0xFF) / 255f, ((rgb >> 8) & 0xFF) / 255f, (rgb & 0xFF) / 255f, 1f);
