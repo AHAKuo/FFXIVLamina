@@ -105,7 +105,7 @@ internal sealed class LayerEditor
         {
             GlamourerLayer.KindName      => (_s.Glamourer.Available, "Glamourer is not loaded."),
             PenumbraAdjustLayer.KindName => (_s.Penumbra.Available, "Penumbra is not loaded."),
-            VitrineDesignLayer.KindName  => (_s.Vitrine.Available, "Vitrine needs Penumbra; it is not loaded."),
+            VitrineDesignLayer.KindName  => (_s.Vitrine.Available, "Vitrine is not installed (separate plugin)."),
             HonorificLayer.KindName      => (_s.Honorific.Available, "Honorific is not loaded."),
             MoodlesLayer.KindName        => (_s.Moodles.Available, "Moodles is not loaded."),
             _                            => (false, "Unsupported layer kind."),
@@ -168,13 +168,13 @@ internal sealed class LayerEditor
         }
         if (v.VitrineDesignId != Guid.Empty && design is null)
         {
-            ImGui.TextColored(Widgets.Bad, "Broken link: this Vitrine design no longer exists. The layer is skipped.");
+            ImGui.TextColored(Widgets.Bad, _s.Vitrine.Available ? "Broken link: this Vitrine design no longer exists. The layer is skipped." : "Vitrine is not installed; the design cannot be verified and the layer is skipped.");
             return changed;
         }
         if (design is null)
             return changed;
 
-        Widgets.Hint($"{Widgets.Humanize(design.Category.ToString())} · {design.Mods.Count} mod(s)" + (design.IsAuto ? string.Empty : " · variant"));
+        Widgets.Hint($"{Widgets.Humanize(design.Category)} · {design.Mods.Count} mod(s)" + (design.IsAuto ? string.Empty : " · variant"));
         var mod = design.Mods.FirstOrDefault();
         if (mod is null)
             return changed;

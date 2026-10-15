@@ -107,6 +107,7 @@ public sealed partial class LaminaWindow
                 DrawIntegrationRow(_s.Penumbra, required: true);
                 DrawIntegrationRow(_s.Honorific, required: false);
                 DrawIntegrationRow(_s.Moodles, required: false);
+                DrawIntegrationRow(_s.Vitrine, required: false);
             }
         }
         ImGui.Spacing();

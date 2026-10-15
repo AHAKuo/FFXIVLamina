@@ -8,7 +8,6 @@ using Lamina.Persistence;
 using Lamina.Runtime.Compose;
 using Lamina.Runtime.State;
 using Penumbra.Api.Enums;
-using Vitrine;
 
 namespace Lamina.Runtime.Engine;
 
@@ -36,7 +35,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     private readonly IPenumbraBridge _penumbra;
     private readonly IHonorificBridge _honorific;
     private readonly IMoodlesBridge _moodles;
-    private readonly IVitrineModule _vitrine;
+    private readonly IVitrineBridge _vitrine;
     private readonly IFramework _framework;
     private readonly IObjectTable _objects;
     private readonly IClientState _clientState;
@@ -72,7 +71,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     /// <summary> Creates the engine and subscribes to every source of change. </summary>
     public LaminaEngine(ProfileStore profiles, StateTracker tracker, ConditionEvaluator evaluator, PassCompositor compositor,
         LayerResolver resolver, GlamourerDesignCache cache, IGlamourerBridge glamourer, IPenumbraBridge penumbra,
-        IHonorificBridge honorific, IMoodlesBridge moodles, IVitrineModule vitrine, IFramework framework, IObjectTable objects,
+        IHonorificBridge honorific, IMoodlesBridge moodles, IVitrineBridge vitrine, IFramework framework, IObjectTable objects,
         IClientState clientState, ICondition condition, GameCatalog catalog, IPluginLog log, TickClock? clock = null)
     {
         _profiles    = profiles;
@@ -105,7 +104,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
         _tracker.SnapshotChanged       += OnSnapshotChanged;
         _profiles.Changed              += OnProfilesChanged;
-        _vitrine.CatalogChanged        += OnVitrineChanged;
+        _vitrine.DesignsChanged        += OnVitrineChanged;
         _glamourer.AvailabilityChanged += OnGlamourerAvailability;
         _penumbra.AvailabilityChanged  += OnPenumbraAvailability;
         _honorific.AvailabilityChanged += Invalidate;
@@ -209,6 +208,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     public void RequestReapply()
     {
         _cache.InvalidateAll();
+        _vitrine.RefreshDesigns();
         _dirty = true;
         _force = true;
     }
@@ -648,7 +648,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _framework.Update              -= OnFrameworkUpdate;
         _tracker.SnapshotChanged       -= OnSnapshotChanged;
         _profiles.Changed              -= OnProfilesChanged;
-        _vitrine.CatalogChanged        -= OnVitrineChanged;
+        _vitrine.DesignsChanged        -= OnVitrineChanged;
         _glamourer.AvailabilityChanged -= OnGlamourerAvailability;
         _penumbra.AvailabilityChanged  -= OnPenumbraAvailability;
         _honorific.AvailabilityChanged -= Invalidate;

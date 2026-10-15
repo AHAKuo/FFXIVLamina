@@ -1,5 +1,4 @@
 using Penumbra.Api.Enums;
-using Vitrine;
 
 namespace Lamina.UI;
 
@@ -21,7 +20,7 @@ internal sealed class UiCaches : IDisposable
         _s.Penumbra.AvailabilityChanged  += MarkStale;
         _s.Honorific.AvailabilityChanged += MarkStale;
         _s.Moodles.AvailabilityChanged   += MarkStale;
-        _s.Vitrine.CatalogChanged        += MarkStale;
+        _s.Vitrine.DesignsChanged        += MarkStale;
     }
 
     public void Dispose()
@@ -30,7 +29,7 @@ internal sealed class UiCaches : IDisposable
         _s.Penumbra.AvailabilityChanged  -= MarkStale;
         _s.Honorific.AvailabilityChanged -= MarkStale;
         _s.Moodles.AvailabilityChanged   -= MarkStale;
-        _s.Vitrine.CatalogChanged        -= MarkStale;
+        _s.Vitrine.DesignsChanged        -= MarkStale;
     }
 
     /// <summary> Glamourer designs sorted by folder path. </summary>
@@ -137,7 +136,7 @@ internal sealed class UiCaches : IDisposable
 
         try
         {
-            VitrineDesigns = _s.Vitrine.Designs.Select(d => new Widgets.PickItem<Guid>(d.Id, d.Name, Widgets.Humanize(d.Category.ToString()) + (d.IsAuto ? string.Empty : " · variant")))
+            VitrineDesigns = _s.Vitrine.Designs.Select(d => new Widgets.PickItem<Guid>(d.Id, d.Name, Widgets.Humanize(d.Category) + (d.IsAuto ? string.Empty : " · variant")))
                 .OrderBy(d => d.Sub, StringComparer.OrdinalIgnoreCase).ThenBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
         catch (Exception ex)

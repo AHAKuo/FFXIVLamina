@@ -1,5 +1,5 @@
+using Lamina.Ipc;
 using Lamina.Models;
-using Vitrine;
 
 namespace Lamina.Runtime.Compose;
 
@@ -10,15 +10,15 @@ namespace Lamina.Runtime.Compose;
 public sealed class LayerResolver
 {
     private readonly GlamourerDesignCache _cache;
-    private readonly Func<IVitrineModule?> _vitrine;
+    private readonly Func<IVitrineBridge?> _vitrine;
     private readonly Func<bool> _applyGlamourerModAssociations;
     private readonly Action<string>? _log;
 
     /// <param name="cache"> Glamourer design cache. </param>
-    /// <param name="vitrine"> Vitrine module accessor; may return null while Vitrine is unavailable. </param>
+    /// <param name="vitrine"> Vitrine bridge accessor; may return null when no bridge exists. Designs come from the separate Vitrine plugin over IPC. </param>
     /// <param name="applyGlamourerModAssociations"> Reads LaminaConfig.ApplyGlamourerModAssociations. </param>
     /// <param name="log"> Optional debug logger for non-fatal oddities (e.g. a Moodle both added and removed). </param>
-    public LayerResolver(GlamourerDesignCache cache, Func<IVitrineModule?> vitrine, Func<bool> applyGlamourerModAssociations, Action<string>? log = null)
+    public LayerResolver(GlamourerDesignCache cache, Func<IVitrineBridge?> vitrine, Func<bool> applyGlamourerModAssociations, Action<string>? log = null)
     {
         _cache                         = cache;
         _vitrine                       = vitrine;
@@ -79,7 +79,7 @@ public sealed class LayerResolver
         var vitrine = _vitrine();
         if (vitrine is null || !vitrine.Available)
         {
-            skipReason = "Vitrine unavailable";
+            skipReason = "Vitrine is not installed";
             return null;
         }
 

@@ -5,7 +5,6 @@ using Lamina.Persistence;
 using Lamina.Runtime;
 using Lamina.Runtime.Compose;
 using Lamina.Runtime.State;
-using Vitrine;
 
 namespace Lamina;
 
@@ -38,7 +37,7 @@ public sealed class LaminaServices
     public required IPenumbraBridge Penumbra { get; init; }
     public required IHonorificBridge Honorific { get; init; }
     public required IMoodlesBridge Moodles { get; init; }
-    public required IVitrineModule Vitrine { get; init; }
+    public required IVitrineBridge Vitrine { get; init; }
 
     /// <summary> Plugin version string for the About tab. </summary>
     public required string Version { get; init; }

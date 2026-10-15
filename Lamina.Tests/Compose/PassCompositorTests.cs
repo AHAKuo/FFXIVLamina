@@ -2,7 +2,8 @@ using Lamina.Models;
 using Lamina.Runtime;
 using Lamina.Runtime.Compose;
 using Newtonsoft.Json.Linq;
-using Vitrine;
+using Lamina.Ipc;
+using Lamina.Tests.Fakes;
 using Xunit;
 
 namespace Lamina.Tests.Compose;
@@ -29,7 +30,7 @@ public class PassCompositorTests
         return new GlamourerLayer { DesignId = id };
     }
 
-    private (VirtualDesign, EvaluationReport) Compose(Profile p, FakeGlamourerBridge bridge, EvaluationDirection dir = EvaluationDirection.TopToBottom, FakeVitrineModule? vitrine = null)
+    private (VirtualDesign, EvaluationReport) Compose(Profile p, FakeGlamourerBridge bridge, EvaluationDirection dir = EvaluationDirection.TopToBottom, FakeVitrineBridge? vitrine = null)
         => _compositor.Compose(p, Snap, _eval, dir, Build.Resolver(bridge, vitrine));
 
     [Fact]
@@ -213,11 +214,12 @@ public class PassCompositorTests
     public void ModsFromDesignsVitrineAndAdjustMerge_LaterWins()
     {
         var bridge  = new FakeGlamourerBridge();
-        var vitrine = new FakeVitrineModule();
-        var vd = new VitrineDesign
+        var vitrine = new FakeVitrineBridge();
+        var vd = new VitrineDesignInfo
         {
+            Id   = Guid.NewGuid(),
             Name = "V",
-            Mods = { new VitrineModState { ModDirectory = "VMod", ModName = "V Mod", Priority = 2, Settings = new() { ["Group"] = new() { "A" } } } },
+            Mods = { new VitrineModInfo { ModDirectory = "VMod", ModName = "V Mod", Priority = 2, Settings = new() { ["Group"] = new() { "A" } } } },
         };
         vitrine.DesignList.Add(vd);
 

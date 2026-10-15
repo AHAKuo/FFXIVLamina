@@ -9,7 +9,6 @@ using Lamina.Runtime.Compose;
 using Lamina.Runtime.Engine;
 using Lamina.Runtime.State;
 using Lamina.UI;
-using Vitrine;
 
 namespace Lamina;
 
@@ -36,7 +35,6 @@ public sealed class Plugin : IDalamudPlugin
 
     private LaminaEngine? _engine;
     private ProfileStore? _profiles;
-    private IVitrineModule? _vitrine;
     private LaminaWindow? _window;
 
     /// <summary> The service bundle, available after construction. </summary>
@@ -83,9 +81,8 @@ public sealed class Plugin : IDalamudPlugin
         var evaluator = new ConditionEvaluator(clock.Read, () => profiles.Config);
         var cache     = new GlamourerDesignCache(glamourer);
 
-        var host    = new VitrineHost(store.VitrineDirectory);
-        var vitrine = Track(new VitrineModule(PluginInterface, Log, Framework, TextureProvider, host));
-        _vitrine = vitrine;
+        // Vitrine is a separate, optional plugin reached over IPC.
+        var vitrine = Track(new VitrineBridge(PluginInterface, Log, Framework));
 
         var resolver   = new LayerResolver(cache, () => vitrine, () => profiles.Config.ApplyGlamourerModAssociations, m => Log.Debug(m));
         var compositor = new PassCompositor();
@@ -93,7 +90,6 @@ public sealed class Plugin : IDalamudPlugin
         var engine = Track(new LaminaEngine(profiles, tracker, evaluator, compositor, resolver, cache, glamourer, penumbra, honorific, moodles,
             vitrine, Framework, ObjectTable, ClientState, Condition, catalog, Log, clock));
         _engine = engine;
-        host.Attach(engine, glamourer, DataManager, Framework, ClientState, ObjectTable);
 
         Services = new LaminaServices
         {
@@ -144,7 +140,6 @@ public sealed class Plugin : IDalamudPlugin
     private void DrawUi()
     {
         _windowSystem.Draw();
-        _vitrine?.Draw();
     }
 
     private void OpenMainUi()

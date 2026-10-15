@@ -26,7 +26,7 @@ public sealed record LoadError(string File, string Message, bool IsWarning = fal
 ///   biomes.json            BiomeMap overrides
 ///   profiles/&lt;id&gt;.json    one Profile each
 ///   backups/&lt;timestamp&gt;/  rotating copies of overwritten files
-///   vitrine/               reserved for the Vitrine module
+///   vitrine/               legacy folder from when Vitrine was bundled (the standalone plugin keeps its own data)
 /// </code>
 /// Writes are atomic (temp file then move). A broken profile only breaks that profile.
 /// Contains no Dalamud types; the clock is injectable for tests.
@@ -65,7 +65,7 @@ public sealed class JsonStore
     /// <summary> Folder holding rotating backup folders. </summary>
     public string BackupsDirectory { get; }
 
-    /// <summary> Folder reserved for Vitrine's cache and designs. </summary>
+    /// <summary> Legacy folder from when Vitrine was bundled; the standalone Vitrine plugin keeps its own data. </summary>
     public string VitrineDirectory { get; }
 
     /// <summary> Path of config.json. </summary>

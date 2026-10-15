@@ -28,7 +28,7 @@ public sealed class Commands : IDisposable
         });
         _services.CommandManager.AddHandler(VitrineCommand, new CommandInfo(OnVitrine)
         {
-            HelpMessage = "Open Vitrine, the mod view inside Lamina.",
+            HelpMessage = "Open Vitrine (separate plugin) when it is installed.",
         });
     }
 
@@ -106,11 +106,19 @@ public sealed class Commands : IDisposable
         Print("/lam reapply — re-evaluate and apply now");
         Print("/lam redraw — redraw the character now");
         Print("/lam why — explain the current design");
-        Print("/vit — open Vitrine");
+        Print("/vit — open Vitrine (separate plugin, optional)");
     }
 
     private void OnVitrine(string command, string args)
-        => _services.Vitrine.ToggleWindow();
+    {
+        if (!_services.Vitrine.Available)
+        {
+            Print("Vitrine is not installed. It is a separate plugin from ahadev's repository; install it to browse and try on your mods.");
+            return;
+        }
+
+        _services.Vitrine.OpenWindow(null);
+    }
 
     private void Print(string message)
         => _services.ChatGui.Print($"[Lamina] {message}");

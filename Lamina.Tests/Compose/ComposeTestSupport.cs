@@ -4,7 +4,6 @@ using Lamina.Models;
 using Lamina.Runtime;
 using Lamina.Runtime.Compose;
 using Newtonsoft.Json.Linq;
-using Vitrine;
 
 namespace Lamina.Tests.Compose;
 
@@ -88,21 +87,6 @@ public sealed class FakeGlamourerBridge : IGlamourerBridge
     public void RaiseFinalized(nint a, StateFinalizationType t) => StateFinalized?.Invoke(a, t);
 }
 
-/// <summary> In-memory Vitrine module for compositor tests. </summary>
-public sealed class FakeVitrineModule : IVitrineModule
-{
-    public List<VitrineDesign> DesignList { get; } = new();
-    public bool Available { get; set; } = true;
-    public IReadOnlyList<VitrineDesign> Designs => DesignList;
-    public VitrineDesign? GetDesign(Guid id) => DesignList.FirstOrDefault(d => d.Id == id);
-    public IReadOnlyList<ModInformation> Mods => Array.Empty<ModInformation>();
-    public event Action? CatalogChanged;
-    public void Refresh() => CatalogChanged?.Invoke();
-    public void ToggleWindow() { }
-    public void Draw() { }
-    public void Dispose() { }
-}
-
 /// <summary> Builders for compact test setups. </summary>
 public static class Build
 {
@@ -150,7 +134,7 @@ public static class Build
         return g;
     }
 
-    public static LayerResolver Resolver(FakeGlamourerBridge bridge, FakeVitrineModule? vitrine = null, bool applyMods = true)
+    public static LayerResolver Resolver(FakeGlamourerBridge bridge, Lamina.Tests.Fakes.FakeVitrineBridge? vitrine = null, bool applyMods = true)
         => new(new GlamourerDesignCache(bridge), () => vitrine, () => applyMods);
 
     public static string FixturePath(string name)
