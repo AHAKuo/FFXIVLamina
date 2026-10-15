@@ -84,7 +84,7 @@ This removes the flicker and redraw spam of rule-by-rule tools (the reason Lamin
 
 ## 4. Architecture
 
-**One plugin, two systems.** Lamina and Vitrine ship together, in one repo, installed together. Vitrine lives behind an internal interface so it can become its own plugin later without rewriting Lamina.
+**Two plugins.** Lamina and Vitrine are separate plugins in separate repos (`AHAKuo/FFXIVLamina`, `AHAKuo/FFXIVVitrine`). Lamina does not need Vitrine; when both are installed, Lamina reaches Vitrine over Dalamud IPC (`vitrine/docs/IPC.md`) through an optional bridge, exactly like Honorific and Moodles.
 
 ```
                          ┌──────────────────────────────┐
@@ -581,7 +581,7 @@ Apply / remove statuses and presets through its IPC (`Moodles/.../IPCProcessor.c
 
 ## 12. Vitrine
 
-A system inside Lamina (may become its own plugin later) to view all Penumbra mods neatly and control them, using a reading layer similar to SQL views. It doesn't change how Penumbra itself is organized.
+A separate plugin (since 2026-10-15; before that a module inside Lamina) to view all Penumbra mods neatly and try them on, using a reading layer similar to SQL views. It doesn't change how Penumbra itself is organized. Lamina consumes its designs over IPC (`vitrine/docs/IPC.md`); a Vitrine design is a mod with baseline settings, and its preview shows it on the character (mod enabled, one affected item per slot equipped through Glamourer, replaced emote played when owned).
 
 ### 12.1 Backend
 **READ**

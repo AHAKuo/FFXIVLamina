@@ -37,12 +37,12 @@
 - [ ] Regenerate: `cd ahadevtools && GITHUB_TOKEN=$(gh auth token) python scripts/build_pluginmaster.py`, commit, push.
 - [ ] Verify `https://raw.githubusercontent.com/AHAKuo/ahadevtools/main/pluginmaster.json` lists Lamina and it shows in `/xlplugins`.
 
-## D) Split Vitrine into its own plugin (after the engine is verified in game)
+## D) Split Vitrine into its own plugin (in progress 2026-10-15)
 Lamina only uses Vitrine for the Vitrine Design layer (design id → mod states), the design/catalog pickers in the Lamina UI, a designs-changed signal, and hosting the `/vit` window. Vitrine only needs a data directory, a collection + temp key for "Preview on character", and a re-evaluate callback from Lamina. The split is cheap:
-- [ ] Give Vitrine its own plugin project / config directory (today it borrows Lamina's `vitrine/` folder via `IVitrineHost.DataDirectory`).
-- [ ] Expose a small Vitrine IPC: list designs, get a design's mod states, designs-changed event, open window.
-- [ ] Replace Lamina's project reference with an optional `VitrineBridge` (like Honorific / Moodles): layer type greyed out when Vitrine is not installed, existing layers skipped with "plugin missing".
-- [ ] Decide where Vitrine's preview writes go without Lamina (user-chosen collection, or Penumbra per-player temporary settings with Vitrine's own key).
+- [x] Give Vitrine its own plugin project / config directory (repo `AHAKuo/FFXIVVitrine`, folder `../vitrine`).
+- [x] Expose a small Vitrine IPC: list designs, get a design's mod states, designs-changed event, open window, preview (`vitrine/docs/IPC.md`).
+- [x] Replace Lamina's project reference with an optional `VitrineBridge` (like Honorific / Moodles): layer type greyed out when Vitrine is not installed, existing layers skipped with "plugin missing".
+- [x] Vitrine's preview writes go to Penumbra per-player temporary settings with Vitrine's own key.
 - [ ] Register the new plugin in `ahadevtools` and release both.
 
 ## Later (TDD section 14)

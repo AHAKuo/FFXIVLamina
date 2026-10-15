@@ -18,16 +18,10 @@ If that sounds like something you want, then Lamina is for you.
 - Layering of Glamourer designs.
 - Application of Honorific titles.
 - Application of Moodles states.
-- Vitrine. A sub-feature that provides ease of management and finding and organizing of your Penumbra mods.
+- Vitrine integration (optional): use designs from the separate Vitrine plugin as layers.
 
 ## Virtual Designs
 A Virtual Design is a design created by combining multiple different rulesets and combining the resulting Glamourer, Honorific, Moodles, and Penumbra statuses into one final design. This design is applied in one pass with efficient handling to prevent slow flickers or heavy condition swapping. The character is drawn ONCE after the virtual design is determined.
 
-## Vitrine
-You don't like to organize or manage enable/disable or collection or your mod collections? Do you like to just dump mods into your penumbra like a mad man, and hope that somehow it will all be organized at the end? Then look no further than Vitrine. Focus on your designs and don't think about where your mods actually are or what collection you're applying to.
-
-### Vitrine - Features
-- Auto creation of virtual designs based on mods that change in-game stuff. The Vitrine menu contains your penumbra mods auto organized by what each mod affects and does.
-- These virtual designs can be used directly in rulesets if needed, and can be combined per need and also can have variants or presets of them with certain toggles on or off. You don't need to touch penumbra for enabling stuff anymore. Dump it!
-- The menu prevents manual interaction and instead offers ins to adjust things so you don't need to worry about it, but you can also create your own variants of each mod.
-- Vitrine handles the enable/disable/priorty of each mod enabled or used in a virtual design, and it handles the cleanup of turning them back off. 
+## Works with Vitrine (separate plugin, optional)
+Vitrine is ahadev's standalone mod browser: it organizes your Penumbra mods by what they change, shows their display photos, lets you try a mod on your character (mod + a full set of its affected items) and turns each mod into a design with your baseline settings. Lamina does not need it to run. When Vitrine is installed, Lamina finds it automatically and its designs become a layer type ("Vitrine Design") you can use in any pass. Repository: https://github.com/AHAKuo/FFXIVVitrine
