@@ -5,6 +5,19 @@ Lamina is a FFXIV dalamud plugin that takes your appearance automation to the ne
 You are RP'ing as multiple characters, and each of them has a special look in different possible situations, and not only that, they also have special titles, buffs or debuffs, and even specific mods activated at a time (VFX, SFX, Animation, etc...). You want to switch between them in one click and also see them swap between all these modes super quick.
 If that sounds like something you want, then Lamina is for you.
 
+## Installation
+Lamina is one of ahadev's plugins and installs through Dalamud's plugin installer from a custom repository.
+
+1. In game, type `/xlsettings` to open the Dalamud settings and go to the **Experimental** tab.
+2. Under **Custom Plugin Repositories**, paste this URL into the empty field, click the **+** button, then **Save and Close**:
+   ```
+   https://raw.githubusercontent.com/AHAKuo/ahadevtools/main/pluginmaster.json
+   ```
+3. Type `/xlplugins` to open the plugin installer, search for **Lamina** and click **Install**.
+4. Make sure Glamourer and Penumbra are installed and enabled, then type `/lam` to open Lamina.
+
+Updates arrive through the same installer like any other plugin. The repository also lists ahadev's other plugins (Vitrine among them), so you only add it once.
+
 ## Requires
 - Glamourer.
 - Penumbra.
