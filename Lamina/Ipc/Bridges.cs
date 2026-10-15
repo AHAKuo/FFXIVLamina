@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using Glamourer.Api.Enums;
 using Newtonsoft.Json.Linq;
 using Penumbra.Api.Enums;
@@ -92,6 +93,26 @@ public interface IPenumbraBridge : IPluginBridge
     /// returned even while temporary ones (Lamina's or another plugin's) are active.
     /// </summary>
     (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings, bool Inherited, bool Temporary)? GetCurrentModSettings(Guid collectionId, string modDirectory, bool ignoreTemporary = false);
+
+    // ---- decal support (resource trees, path resolution, temporary mods, texture conversion) ----
+
+    /// <summary> The resource tree Penumbra sees for a drawn object (models → materials → textures, with actual disk paths). Null when unavailable. </summary>
+    Penumbra.Api.ResourceTreeDto? GetGameObjectResourceTree(int objectIndex, bool withUiData = true);
+
+    /// <summary> The file a game path resolves to for an object (through its collection, temporary mods included). The game path itself when unmodified. </summary>
+    string ResolveGameObjectPath(string gamePath, int objectIndex);
+
+    /// <summary> Adds (or replaces, same tag and priority) a temporary mod: game path → absolute file path redirects. Gone when Penumbra restarts. </summary>
+    PenumbraApiEc AddTemporaryMod(string tag, Guid collectionId, IReadOnlyDictionary<string, string> redirects, int priority);
+
+    /// <summary> Removes a temporary mod added with <see cref="AddTemporaryMod"/>. </summary>
+    PenumbraApiEc RemoveTemporaryMod(string tag, Guid collectionId, int priority);
+
+    /// <summary> Converts a .tex / .dds / .png file to another format through Penumbra's converter. </summary>
+    Task ConvertTextureFile(string inputFile, string outputFile, TextureType textureType, bool mipMaps);
+
+    /// <summary> Writes RGBA32 pixel data (row major, height = length / width / 4) as a texture file through Penumbra's converter. </summary>
+    Task ConvertTextureData(byte[] rgbaData, int width, string outputFile, TextureType textureType, bool mipMaps);
 
     event Action<string>? ModAdded;
     event Action<string>? ModDeleted;

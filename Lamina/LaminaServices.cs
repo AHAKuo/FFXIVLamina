@@ -1,5 +1,6 @@
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Lamina.Decals;
 using Lamina.Ipc;
 using Lamina.Persistence;
 using Lamina.Runtime;
@@ -21,6 +22,7 @@ public sealed class LaminaServices
     public required IClientState ClientState { get; init; }
     public required IObjectTable ObjectTable { get; init; }
     public required ITextureProvider TextureProvider { get; init; }
+    public required IGameGui GameGui { get; init; }
     public required ICommandManager CommandManager { get; init; }
     public required IChatGui ChatGui { get; init; }
 
@@ -38,6 +40,15 @@ public sealed class LaminaServices
     public required IHonorificBridge Honorific { get; init; }
     public required IMoodlesBridge Moodles { get; init; }
     public required IVitrineBridge Vitrine { get; init; }
+
+    /// <summary> Decal picking on the posed player. Null when the decal feature could not start. </summary>
+    public IDecalPicker? DecalPicker { get; init; }
+
+    /// <summary> Live skin meshes of the local player. Null when the decal feature could not start. </summary>
+    public ISkinMeshProvider? SkinMeshes { get; init; }
+
+    /// <summary> Decal baking / publishing. Null when the decal feature could not start. </summary>
+    public IDecalPublisher? DecalPublisher { get; init; }
 
     /// <summary> Plugin version string for the About tab. </summary>
     public required string Version { get; init; }

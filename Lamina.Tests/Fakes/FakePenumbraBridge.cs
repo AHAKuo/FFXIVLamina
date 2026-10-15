@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using Lamina.Ipc;
 using Penumbra.Api.Enums;
 
@@ -187,6 +188,92 @@ public sealed class FakePenumbraBridge : FakeBridgeBase, IPenumbraBridge
 
         // Not configured in the collection: Penumbra answers with no settings tuple.
         return null;
+    }
+
+    // ---- decal support ----
+
+    /// <summary> Resource tree returned for every object (null by default). </summary>
+    public Penumbra.Api.ResourceTreeDto? ResourceTree { get; set; }
+
+    /// <summary> Game path → resolved disk path used by <see cref="ResolveGameObjectPath"/>; unlisted paths resolve to themselves. </summary>
+    public Dictionary<string, string> ResolvedPaths { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary> Collection id → (tag, priority) → redirects, as written by <see cref="AddTemporaryMod"/>. </summary>
+    public Dictionary<Guid, Dictionary<(string Tag, int Priority), Dictionary<string, string>>> TemporaryMods { get; } = new();
+
+    /// <summary> Every texture conversion requested: (input file or null, width or 0, output file, type, mip maps). </summary>
+    public List<(string? InputFile, int Width, string OutputFile, TextureType Type, bool MipMaps)> Conversions { get; } = new();
+
+    /// <summary> When positive, conversions write this many bytes to the output file so the file exists. </summary>
+    public int ConversionOutputBytes { get; set; } = 16;
+
+    public Penumbra.Api.ResourceTreeDto? GetGameObjectResourceTree(int objectIndex, bool withUiData = true)
+    {
+        Record(nameof(GetGameObjectResourceTree), objectIndex, withUiData);
+        return Available ? ResourceTree : null;
+    }
+
+    public string ResolveGameObjectPath(string gamePath, int objectIndex)
+    {
+        Record(nameof(ResolveGameObjectPath), gamePath, objectIndex);
+        if (!Available)
+            return gamePath;
+        foreach (var (_, mods) in TemporaryMods)
+            foreach (var (_, redirects) in mods)
+                if (redirects.TryGetValue(gamePath, out var temp))
+                    return temp;
+        return ResolvedPaths.TryGetValue(gamePath, out var resolved) ? resolved : gamePath;
+    }
+
+    public PenumbraApiEc AddTemporaryMod(string tag, Guid collectionId, IReadOnlyDictionary<string, string> redirects, int priority)
+    {
+        Record(nameof(AddTemporaryMod), tag, collectionId, redirects, priority);
+        if (!Available)
+            return PenumbraApiEc.UnknownError;
+        if (!Collections.ContainsKey(collectionId))
+            return PenumbraApiEc.CollectionMissing;
+        if (!TemporaryMods.TryGetValue(collectionId, out var mods))
+            TemporaryMods[collectionId] = mods = new Dictionary<(string, int), Dictionary<string, string>>();
+        mods[(tag, priority)] = redirects.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+        return PenumbraApiEc.Success;
+    }
+
+    public PenumbraApiEc RemoveTemporaryMod(string tag, Guid collectionId, int priority)
+    {
+        Record(nameof(RemoveTemporaryMod), tag, collectionId, priority);
+        if (!Available)
+            return PenumbraApiEc.UnknownError;
+        if (!Collections.ContainsKey(collectionId))
+            return PenumbraApiEc.CollectionMissing;
+        return TemporaryMods.TryGetValue(collectionId, out var mods) && mods.Remove((tag, priority))
+            ? PenumbraApiEc.Success
+            : PenumbraApiEc.NothingChanged;
+    }
+
+    public Task ConvertTextureFile(string inputFile, string outputFile, TextureType textureType, bool mipMaps)
+    {
+        Record(nameof(ConvertTextureFile), inputFile, outputFile, textureType, mipMaps);
+        Conversions.Add((inputFile, 0, outputFile, textureType, mipMaps));
+        WriteConversionOutput(outputFile);
+        return Task.CompletedTask;
+    }
+
+    public Task ConvertTextureData(byte[] rgbaData, int width, string outputFile, TextureType textureType, bool mipMaps)
+    {
+        Record(nameof(ConvertTextureData), rgbaData.Length, width, outputFile, textureType, mipMaps);
+        Conversions.Add((null, width, outputFile, textureType, mipMaps));
+        WriteConversionOutput(outputFile);
+        return Task.CompletedTask;
+    }
+
+    private void WriteConversionOutput(string outputFile)
+    {
+        if (ConversionOutputBytes <= 0)
+            return;
+        var dir = System.IO.Path.GetDirectoryName(outputFile);
+        if (!string.IsNullOrEmpty(dir))
+            System.IO.Directory.CreateDirectory(dir);
+        System.IO.File.WriteAllBytes(outputFile, new byte[ConversionOutputBytes]);
     }
 
     public void RaiseModAdded(string modDirectory)

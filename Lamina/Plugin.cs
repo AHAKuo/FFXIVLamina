@@ -28,6 +28,8 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPlayerState PlayerState { get; private set; } = null!;
     [PluginService] internal static IFateTable FateTable { get; private set; } = null!;
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
+    [PluginService] internal static ITextureReadbackProvider TextureReadback { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
 
     private readonly List<IDisposable> _disposables = new();
@@ -102,6 +104,7 @@ public sealed class Plugin : IDalamudPlugin
             ClientState     = ClientState,
             ObjectTable     = ObjectTable,
             TextureProvider = TextureProvider,
+            GameGui         = GameGui,
             CommandManager  = CommandManager,
             ChatGui         = ChatGui,
             Profiles        = profiles,

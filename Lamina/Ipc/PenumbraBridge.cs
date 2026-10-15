@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Luna;
@@ -29,6 +30,12 @@ public sealed class PenumbraBridge : BridgeBase, IPenumbraBridge
     private readonly GetAvailableModSettings       _getAvailableModSettings;
     private readonly GetChangedItems               _getChangedItems;
     private readonly GetCurrentModSettingsWithTemp _getCurrentModSettingsWithTemp;
+    private readonly GetGameObjectResourceTrees    _getGameObjectResourceTrees;
+    private readonly ResolveGameObjectPath         _resolveGameObjectPath;
+    private readonly AddTemporaryMod               _addTemporaryMod;
+    private readonly RemoveTemporaryMod            _removeTemporaryMod;
+    private readonly ConvertTextureFile            _convertTextureFile;
+    private readonly ConvertTextureData            _convertTextureData;
 
     private readonly EventSubscriber<string>         _modAdded;
     private readonly EventSubscriber<string>         _modDeleted;
@@ -54,6 +61,12 @@ public sealed class PenumbraBridge : BridgeBase, IPenumbraBridge
         _getAvailableModSettings       = new GetAvailableModSettings(pi);
         _getChangedItems               = new GetChangedItems(pi);
         _getCurrentModSettingsWithTemp = new GetCurrentModSettingsWithTemp(pi);
+        _getGameObjectResourceTrees    = new GetGameObjectResourceTrees(pi);
+        _resolveGameObjectPath         = new ResolveGameObjectPath(pi);
+        _addTemporaryMod               = new AddTemporaryMod(pi);
+        _removeTemporaryMod            = new RemoveTemporaryMod(pi);
+        _convertTextureFile            = new ConvertTextureFile(pi);
+        _convertTextureData            = new ConvertTextureData(pi);
 
         _modAdded          = Penumbra.Api.IpcSubscribers.ModAdded.Subscriber(pi, OnModAdded);
         _modDeleted        = Penumbra.Api.IpcSubscribers.ModDeleted.Subscriber(pi, OnModDeleted);
@@ -160,6 +173,37 @@ public sealed class PenumbraBridge : BridgeBase, IPenumbraBridge
             var converted = settings.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value);
             return (enabled, priority, converted, inherited, temporary);
         }, null, nameof(GetCurrentModSettings));
+
+    /// <inheritdoc/>
+    public Penumbra.Api.ResourceTreeDto? GetGameObjectResourceTree(int objectIndex, bool withUiData = true)
+        => Call<Penumbra.Api.ResourceTreeDto?>(() =>
+        {
+            var trees = _getGameObjectResourceTrees.Invoke(withUiData, (ushort)objectIndex);
+            return trees.Length > 0 ? trees[0] : null;
+        }, null, nameof(GetGameObjectResourceTree));
+
+    /// <inheritdoc/>
+    public string ResolveGameObjectPath(string gamePath, int objectIndex)
+        => Call(() => _resolveGameObjectPath.Invoke(gamePath, objectIndex), gamePath, nameof(ResolveGameObjectPath));
+
+    /// <inheritdoc/>
+    public PenumbraApiEc AddTemporaryMod(string tag, Guid collectionId, IReadOnlyDictionary<string, string> redirects, int priority)
+        => Call(() => _addTemporaryMod.Invoke(tag, collectionId, new Dictionary<string, string>(redirects), string.Empty, priority),
+            PenumbraApiEc.UnknownError, nameof(AddTemporaryMod));
+
+    /// <inheritdoc/>
+    public PenumbraApiEc RemoveTemporaryMod(string tag, Guid collectionId, int priority)
+        => Call(() => _removeTemporaryMod.Invoke(tag, collectionId, priority), PenumbraApiEc.UnknownError, nameof(RemoveTemporaryMod));
+
+    /// <inheritdoc/>
+    public Task ConvertTextureFile(string inputFile, string outputFile, TextureType textureType, bool mipMaps)
+        => Call(() => _convertTextureFile.Invoke(inputFile, outputFile, textureType, mipMaps),
+            Task.FromException(new InvalidOperationException("Penumbra unavailable")), nameof(ConvertTextureFile));
+
+    /// <inheritdoc/>
+    public Task ConvertTextureData(byte[] rgbaData, int width, string outputFile, TextureType textureType, bool mipMaps)
+        => Call(() => _convertTextureData.Invoke(rgbaData, width, outputFile, textureType, mipMaps),
+            Task.FromException(new InvalidOperationException("Penumbra unavailable")), nameof(ConvertTextureData));
 
     private void OnModAdded(string modDirectory)
         => Dispatch(() => ModAdded?.Invoke(modDirectory), nameof(ModAdded));

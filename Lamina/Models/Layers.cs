@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lamina.Decals;
 using Newtonsoft.Json;
 
 namespace Lamina.Models;
@@ -267,6 +268,32 @@ public static class AdvancedParameters
     }
 }
 
+/// <summary>
+/// A PNG projected onto the player's skin (TDD decal layer): the image is baked into the body or face diffuse texture at a
+/// rest-pose placement picked by clicking the character, and the result is redirected in the Lamina collection with a
+/// temporary Penumbra mod. Only visible where skin is drawn (gear covers it).
+/// </summary>
+public sealed class DecalLayer : Layer
+{
+    public const string KindName = "Decal";
+    public override string Kind => KindName;
+
+    /// <summary> File name of the image inside Lamina's decal image folder (the UI copies the picked file there). Null = nothing chosen. </summary>
+    public string? ImageFile { get; set; }
+
+    /// <summary> Where the decal sits. Null = not placed yet (the layer contributes nothing). </summary>
+    public DecalPlacement? Placement { get; set; }
+
+    /// <summary> 0..1. </summary>
+    public float Opacity { get; set; } = 1f;
+
+    public bool IsComplete
+        => !string.IsNullOrEmpty(ImageFile) && Placement is not null;
+
+    public override string Describe()
+        => IsComplete ? $"Decal {ImageFile} on {Placement!.Surface}" : "Decal (not placed)";
+}
+
 public sealed class HonorificLayer : Layer
 {
     public const string KindName = "Honorific";
@@ -387,6 +414,7 @@ public static class LayerKinds
         (VitrineDesignLayer.KindName,  "Vitrine Design",     () => new VitrineDesignLayer()),
         (HonorificLayer.KindName,      "Honorific",          () => new HonorificLayer()),
         (MoodlesLayer.KindName,        "Moodles",            () => new MoodlesLayer()),
+        (DecalLayer.KindName,          "Decal",              () => new DecalLayer()),
     };
 
     /// <summary> Kinds whose contribution is filtered through the pass's Macro Override (they write Glamourer / mod fields). </summary>
