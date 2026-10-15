@@ -45,6 +45,17 @@ Lamina only uses Vitrine for the Vitrine Design layer (design id → mod states)
 - [x] Vitrine's preview writes go to Penumbra per-player temporary settings with Vitrine's own key.
 - [ ] Register the new plugin in `ahadevtools` and release both.
 
+## E) Vitrine designs that also equip (Apply Action)
+Vitrine is adding an **Apply Action** to each design (baseline and variants): which equipment slots the design applies
+to and which exact affected piece goes in each slot. Lamina should honour it.
+- [ ] Read `applyAction` from the Vitrine design JSON (IPC minor bump; see `vitrine/docs/IPC.md`).
+- [ ] Vitrine Design layer: besides enabling the mod, contribute the selected pieces to the virtual design's equipment
+      slots (item ids resolved by name through the Item sheet if Vitrine sends names), so one layer both enables the
+      mod and dresses the character. Unselected slots stay passthrough.
+- [ ] Layer editor: show the design's Apply Action summary and a per-layer toggle "Also equip the selected pieces"
+      (default on when the design has an Apply Action); Macro Override masks still apply to those slots.
+- [ ] Preview / `/lam why`: provenance names the Vitrine design for equipped pieces.
+
 ## Later (TDD section 14)
 - [ ] Moodles presets: expand to statuses so cleanup can remove them (needs preset-info IPC in the bridge).
 - [ ] Other targets (characters / players).
