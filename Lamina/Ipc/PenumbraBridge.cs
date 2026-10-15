@@ -148,11 +148,11 @@ public sealed class PenumbraBridge : BridgeBase, IPenumbraBridge
 
     /// <inheritdoc/>
     public (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings, bool Inherited, bool Temporary)? GetCurrentModSettings(
-        Guid collectionId, string modDirectory)
+        Guid collectionId, string modDirectory, bool ignoreTemporary = false)
         => Call<(bool, int, IReadOnlyDictionary<string, IReadOnlyList<string>>, bool, bool)?>(() =>
         {
             var (ec, tuple) = _getCurrentModSettingsWithTemp.Invoke(collectionId, modDirectory, string.Empty,
-                ignoreInheritance: false, ignoreTemporary: false, IpcConstants.PenumbraKey);
+                ignoreInheritance: false, ignoreTemporary, IpcConstants.PenumbraKey);
             if (ec != PenumbraApiEc.Success || tuple is not { } t)
                 return null;
 

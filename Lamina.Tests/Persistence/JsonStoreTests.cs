@@ -26,7 +26,7 @@ public class JsonStoreTests
         var reloaded = Assert.Single(loaded);
         Assert.Equal(profile.Id, reloaded.Id);
         Assert.Equal(profile.Name, reloaded.Name);
-        Assert.Equal(1, JObject.Parse(File.ReadAllText(files[0]))["version"]!.Value<int>());
+        Assert.Equal(Profile.CurrentVersion, JObject.Parse(File.ReadAllText(files[0]))["version"]!.Value<int>());
     }
 
     [Fact]
@@ -179,7 +179,7 @@ public class JsonStoreTests
         var missingVersion = JObject.Parse("""{ "name": "x" }""");
         Assert.Equal(1, Migrations.ReadVersion(missingVersion));
         var current = Migrations.Upgrade(missingVersion, FileKind.Profile);
-        Assert.False(current.Migrated);
+        Assert.Equal(Profile.CurrentVersion != 1, current.Migrated);
         Assert.Equal(Profile.CurrentVersion, missingVersion["version"]!.Value<int>());
 
         var newer = JObject.Parse("""{ "version": 7 }""");

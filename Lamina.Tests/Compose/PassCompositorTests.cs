@@ -232,11 +232,11 @@ public class PassCompositorTests
         var (design, _) = Compose(p, bridge, vitrine: vitrine);
 
         Assert.Equal(2, design.Mods.Count);
-        Assert.Equal(ModToggle.Disable, design.Mods["Shared"].Value.State);
-        Assert.Equal(7, design.Mods["Shared"].Value.Priority);
-        Assert.Equal(pass.Layers[2].Id, design.Mods["Shared"].Source.LayerId);
-        Assert.Equal(new[] { "B" }, design.Mods["VMod"].Value.Settings!["Group"]);
-        Assert.Equal("V Mod", design.Mods["VMod"].Value.ModName);
+        Assert.Equal(ModToggle.Disable, design.Mods["Shared"].State!.Value.Value);
+        Assert.Equal(7, design.Mods["Shared"].Priority!.Value.Value);
+        Assert.Equal(pass.Layers[2].Id, design.Mods["Shared"].State!.Value.Source.LayerId);
+        Assert.Equal(new[] { "B" }, design.Mods["VMod"].Settings["Group"].Value);
+        Assert.Equal("V Mod", design.Mods["VMod"].ModName);
     }
 
     [Fact]
@@ -410,7 +410,8 @@ public class PassCompositorTests
         Assert.Contains("Active group: Home", text);
         Assert.Contains("Matched passes: Rainy", text);
         Assert.Contains("Item Head = 1", text);
-        Assert.Contains("Mod Mod A = enabled, priority 1", text);
+        Assert.Contains("Mod Mod A = enabled", text);
+        Assert.Contains("Mod Mod A priority = 1", text);
         Assert.Contains("Honorific = \"Rain Walker\" (suffix)", text);
         Assert.Contains("Home / Rainy /", text);
         Assert.DoesNotContain("Skipped layers", text);

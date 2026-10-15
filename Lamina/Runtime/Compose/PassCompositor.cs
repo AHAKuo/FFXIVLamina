@@ -19,7 +19,7 @@ public sealed record PreviewResult(
 /// Walks a profile against a snapshot and merges everything the matching passes want into one <see cref="VirtualDesign"/>.
 /// Implements TDD 5.9: first true normal group wins, then every true final group by priority; passes and layers are walked in
 /// the evaluation direction and later merges override earlier ones (unset = passthrough).
-/// Macro Override masks are applied per layer, to Glamourer and Vitrine layers only, before the layer merges.
+/// Macro Override masks are applied per layer, to Glamourer, Vitrine, Equipment and Appearance layers only, before the layer merges.
 /// </summary>
 public sealed class PassCompositor
 {
@@ -49,7 +49,7 @@ public sealed class PassCompositor
                 continue;
             }
 
-            if (pass.MacroOverride is { } mask && layer is GlamourerLayer or VitrineDesignLayer)
+            if (pass.MacroOverride is { } mask && LayerKinds.IsMaskable(layer))
                 draft = draft.Filter(mask);
 
             final.MergeOnTop(draft);

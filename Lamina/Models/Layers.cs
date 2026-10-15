@@ -1,4 +1,5 @@
 using System.Numerics;
+using Newtonsoft.Json;
 
 namespace Lamina.Models;
 
@@ -53,7 +54,11 @@ public sealed class GlamourerLayer : Layer
     public override string Describe() => $"Glamourer design {DesignId}";
 }
 
-/// <summary> Direct control of Penumbra mods in the Lamina collection. </summary>
+/// <summary>
+/// Direct control of Penumbra mods in the Lamina collection. Every part of a <see cref="ModState"/> (enabled flag, priority,
+/// each option group) is either set by this layer or inherited: from the mod state an earlier pass already put into the
+/// running design, else from the mod's effective settings in the Lamina collection (TDD 5.7, per-group merge).
+/// </summary>
 public sealed class PenumbraAdjustLayer : Layer
 {
     public const string KindName = "PenumbraAdjust";
@@ -62,6 +67,148 @@ public sealed class PenumbraAdjustLayer : Layer
     public List<ModState> Mods { get; set; } = new();
 
     public override string Describe() => $"Penumbra adjust ({Mods.Count} mods)";
+}
+
+/// <summary>
+/// Native equipment edits written straight into the virtual design: per slot an item ("Nothing" allowed for gear slots),
+/// a dye pair ("keep item, change dyes only" when no item is set) and an FC crest toggle, plus the hat / visor / weapon /
+/// viera ears visibility toggles. Unset slots pass through. Cascades and masks like a Glamourer design.
+/// </summary>
+public sealed class EquipmentLayer : Layer
+{
+    public const string KindName = "Equipment";
+    public override string Kind => KindName;
+
+    /// <summary> Slot → edit. Only slots present are touched. </summary>
+    public Dictionary<EquipSlot, SlotEdit> Slots { get; set; } = new();
+
+    /// <summary> Visibility toggles (HatVisible, VisorToggled, WeaponVisible, VieraEarsVisible). Wetness belongs to the Appearance layer. </summary>
+    public Dictionary<MetaIndex, bool> Meta { get; set; } = new();
+
+    public override string Describe()
+        => $"Equipment ({Slots.Count} slot(s){(Meta.Count > 0 ? $", {Meta.Count} toggle(s)" : string.Empty)})";
+}
+
+/// <summary> One slot of an <see cref="EquipmentLayer"/>. Each part is optional. </summary>
+public sealed class SlotEdit
+{
+    /// <summary> Game item id, or Glamourer's "Nothing" id for the slot (see <see cref="NothingItems"/>). Null = keep the current item. </summary>
+    public ulong? ItemId { get; set; }
+
+    /// <summary> When true, <see cref="Stain1"/> / <see cref="Stain2"/> are applied (to the set item, or to whatever item is in the slot). </summary>
+    public bool ApplyStains { get; set; }
+
+    public byte Stain1 { get; set; }
+
+    public byte Stain2 { get; set; }
+
+    /// <summary> FC crest on / off. Only Head, Body and OffHand carry crests. Null = keep. </summary>
+    public bool? Crest { get; set; }
+
+    public bool IsEmpty
+        => ItemId is null && !ApplyStains && Crest is null;
+}
+
+/// <summary>
+/// Glamourer's custom item ids for an empty slot: <c>uint.MaxValue - 128 - penumbraSlotIndex</c>, where the index is
+/// Penumbra's EquipSlot value (Head 3, Body 4, Hands 5, Legs 7, Feet 8, Ears 9, Neck 10, Wrists 11, both rings 12).
+/// Weapons have no fixed "Nothing" id (it depends on the weapon type), so they are not offered one.
+/// </summary>
+public static class NothingItems
+{
+    public static ulong? IdFor(EquipSlot slot)
+        => slot switch
+        {
+            EquipSlot.Head    => uint.MaxValue - 128 - 3,
+            EquipSlot.Body    => uint.MaxValue - 128 - 4,
+            EquipSlot.Hands   => uint.MaxValue - 128 - 5,
+            EquipSlot.Legs    => uint.MaxValue - 128 - 7,
+            EquipSlot.Feet    => uint.MaxValue - 128 - 8,
+            EquipSlot.Ears    => uint.MaxValue - 128 - 9,
+            EquipSlot.Neck    => uint.MaxValue - 128 - 10,
+            EquipSlot.Wrists  => uint.MaxValue - 128 - 11,
+            EquipSlot.RFinger => uint.MaxValue - 128 - 12,
+            EquipSlot.LFinger => uint.MaxValue - 128 - 12,
+            _                 => null,
+        };
+
+    /// <summary> True for any of the ids above (any slot). </summary>
+    public static bool IsNothing(ulong itemId)
+        => itemId is >= uint.MaxValue - 128 - 14 and <= uint.MaxValue - 128;
+}
+
+/// <summary>
+/// Native appearance edits written straight into the virtual design: customization values (hair, colours, face, shapes,
+/// height ...), wetness, and Glamourer's advanced parameters (exact RGB colours, muscle tone ...). Unset fields pass through.
+/// Values use Glamourer's conventions: faces and tails 1-based, shape lists 0-based, flag fields 0 / 128, facial feature
+/// N = bit N-1, lip / face paint colours 0-95 (dark) or 128-223 (light).
+/// </summary>
+public sealed class AppearanceLayer : Layer
+{
+    public const string KindName = "Appearance";
+    public override string Kind => KindName;
+
+    /// <summary> Customization index → value. Only indices present are applied. </summary>
+    public Dictionary<CustomizeIndex, int> Customize { get; set; } = new();
+
+    /// <summary> Wet look on / off. Null = keep. </summary>
+    public bool? Wetness { get; set; }
+
+    /// <summary> Advanced parameter key (Glamourer "Parameters" name) → value. Only keys present are applied. </summary>
+    public Dictionary<string, AdvancedParameter> Parameters { get; set; } = new(StringComparer.Ordinal);
+
+    public override string Describe()
+        => $"Appearance ({Customize.Count + (Wetness is null ? 0 : 1) + Parameters.Count} field(s))";
+}
+
+/// <summary> Value of one Glamourer advanced parameter. Which members matter depends on the parameter's kind (<see cref="AdvancedParameters"/>). </summary>
+public sealed class AdvancedParameter
+{
+    /// <summary> Linear RGB in 0..1 (may exceed 1 for glow). Used by Rgb and Rgba parameters. </summary>
+    public Vector3 Color { get; set; } = Vector3.One;
+
+    /// <summary> Alpha for Rgba parameters. </summary>
+    public float Alpha { get; set; } = 1f;
+
+    /// <summary> Percentage (0..1) or plain value, for Percentage / Value parameters. </summary>
+    public float Scalar { get; set; }
+}
+
+public enum AdvancedParameterKind
+{
+    Rgb,
+    Rgba,
+    Percentage,
+    Value,
+}
+
+/// <summary> The advanced parameters Glamourer exposes, with the JSON key it stores them under. </summary>
+public static class AdvancedParameters
+{
+    public static readonly IReadOnlyList<(string Key, string DisplayName, AdvancedParameterKind Kind)> All = new List<(string, string, AdvancedParameterKind)>
+    {
+        ("SkinDiffuse",           "Skin colour",                      AdvancedParameterKind.Rgb),
+        ("MuscleTone",            "Muscle tone",                      AdvancedParameterKind.Percentage),
+        ("LipDiffuse",            "Lip colour",                       AdvancedParameterKind.Rgba),
+        ("HairDiffuse",           "Hair colour",                      AdvancedParameterKind.Rgb),
+        ("HairHighlight",         "Hair highlights",                  AdvancedParameterKind.Rgb),
+        ("LeftEye",               "Left eye colour",                  AdvancedParameterKind.Rgb),
+        ("RightEye",              "Right eye colour",                 AdvancedParameterKind.Rgb),
+        ("FeatureColor",          "Feature colour (tattoo / limbal)", AdvancedParameterKind.Rgb),
+        ("FacePaintUvMultiplier", "Face paint multiplier",            AdvancedParameterKind.Value),
+        ("FacePaintUvOffset",     "Face paint offset",                AdvancedParameterKind.Value),
+        ("DecalColor",            "Face paint colour",                AdvancedParameterKind.Rgba),
+        ("LeftLimbalIntensity",   "Left limbal ring intensity",       AdvancedParameterKind.Percentage),
+        ("RightLimbalIntensity",  "Right limbal ring intensity",      AdvancedParameterKind.Percentage),
+    };
+
+    public static AdvancedParameterKind? KindOf(string key)
+    {
+        foreach (var (k, _, kind) in All)
+            if (k == key)
+                return kind;
+        return null;
+    }
 }
 
 public sealed class HonorificLayer : Layer
@@ -100,7 +247,10 @@ public sealed class MoodlesLayer : Layer
     public override string Describe() => $"Moodles (+{Add.Count + AddPresets.Count} / -{Remove.Count})";
 }
 
-/// <summary> State of one Penumbra mod inside the Lamina collection. Keyed by mod directory. </summary>
+/// <summary>
+/// State of one Penumbra mod inside the Lamina collection, keyed by mod directory. Every part is optional ("applies"
+/// checkboxes in the editor): null / absent = inherited from the running design or the collection, not set by this entry.
+/// </summary>
 public sealed class ModState
 {
     /// <summary> Penumbra mod directory name (the stable identifier). </summary>
@@ -109,13 +259,22 @@ public sealed class ModState
     /// <summary> Display name, informational only (helps the user when the mod is missing). </summary>
     public string? ModName { get; set; }
 
-    public ModToggle State { get; set; } = ModToggle.Enable;
+    /// <summary>
+    /// Enable / disable the mod. Null = inherit. Always written (even when null) so an inherited state survives a save;
+    /// an absent property (files written before the "applies" semantics) means Enable, as it did then.
+    /// </summary>
+    [JsonProperty(NullValueHandling = NullValueHandling.Include)]
+    public ModToggle? State { get; set; } = ModToggle.Enable;
 
-    /// <summary> Null = leave at 0 (Penumbra temporary settings always carry a priority). </summary>
+    /// <summary> Priority. Null = inherit (the collection's priority, 0 when the mod is not configured there). </summary>
     public int? Priority { get; set; }
 
-    /// <summary> Option group name → enabled option names. Null = mod defaults. </summary>
+    /// <summary> Option group name → enabled option names, for the groups this entry sets. Groups not listed are inherited. </summary>
     public Dictionary<string, List<string>>? Settings { get; set; }
+
+    /// <summary> True when the entry sets nothing at all. </summary>
+    public bool IsEmpty
+        => State is null && Priority is null && (Settings is null || Settings.Count == 0);
 
     public ModState Clone()
         => new()
@@ -164,12 +323,18 @@ public static class LayerKinds
 {
     public static readonly IReadOnlyList<(string Kind, string DisplayName, Func<Layer> Create)> All = new List<(string, string, Func<Layer>)>
     {
-        (VitrineDesignLayer.KindName,  "Vitrine Design",  () => new VitrineDesignLayer()),
-        (GlamourerLayer.KindName,      "Glamourer",       () => new GlamourerLayer()),
-        (PenumbraAdjustLayer.KindName, "Penumbra Adjust", () => new PenumbraAdjustLayer()),
-        (HonorificLayer.KindName,      "Honorific",       () => new HonorificLayer()),
-        (MoodlesLayer.KindName,        "Moodles",         () => new MoodlesLayer()),
+        (GlamourerLayer.KindName,      "Glamourer",          () => new GlamourerLayer()),
+        (EquipmentLayer.KindName,      "Equipment Changes",  () => new EquipmentLayer()),
+        (AppearanceLayer.KindName,     "Appearance Changes", () => new AppearanceLayer()),
+        (PenumbraAdjustLayer.KindName, "Penumbra Adjust",    () => new PenumbraAdjustLayer()),
+        (VitrineDesignLayer.KindName,  "Vitrine Design",     () => new VitrineDesignLayer()),
+        (HonorificLayer.KindName,      "Honorific",          () => new HonorificLayer()),
+        (MoodlesLayer.KindName,        "Moodles",            () => new MoodlesLayer()),
     };
+
+    /// <summary> Kinds whose contribution is filtered through the pass's Macro Override (they write Glamourer / mod fields). </summary>
+    public static bool IsMaskable(Layer layer)
+        => layer is GlamourerLayer or VitrineDesignLayer or EquipmentLayer or AppearanceLayer;
 
     public static Layer? Create(string kind)
     {

@@ -88,13 +88,13 @@ public static class Designs
         => d.Items[EquipSlot.Head] = new Field<EquipItem>(new EquipItem(item), Src);
 
     public static void Mod(DesignDraft d, string dir, bool enabled = true, int priority = 0, Dictionary<string, List<string>>? settings = null)
-        => d.Mods[dir] = new Field<ModState>(new ModState
+        => d.AddMod(ModContribution.From(new ModState
         {
             ModDirectory = dir,
             State        = enabled ? ModToggle.Enable : ModToggle.Disable,
             Priority     = priority,
             Settings     = settings,
-        }, Src);
+        }, Src));
 
     public static void Title(DesignDraft d, string title)
         => d.Honorific = new Field<HonorificTitle>(new HonorificTitle(false, title, false, null, null), Src);

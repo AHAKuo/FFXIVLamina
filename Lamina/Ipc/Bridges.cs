@@ -86,8 +86,12 @@ public interface IPenumbraBridge : IPluginBridge
     /// <summary> Changed item display name → game object (or null). </summary>
     IReadOnlyDictionary<string, object?> GetChangedItems(string modDirectory);
 
-    /// <summary> Current settings of a mod in a collection: (enabled, priority, settings, inherited, temporary). Null when missing. </summary>
-    (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings, bool Inherited, bool Temporary)? GetCurrentModSettings(Guid collectionId, string modDirectory);
+    /// <summary>
+    /// Current settings of a mod in a collection: (enabled, priority, settings, inherited, temporary). Null when the mod is
+    /// missing or not configured in the collection. With <paramref name="ignoreTemporary"/> the permanent settings are
+    /// returned even while temporary ones (Lamina's or another plugin's) are active.
+    /// </summary>
+    (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings, bool Inherited, bool Temporary)? GetCurrentModSettings(Guid collectionId, string modDirectory, bool ignoreTemporary = false);
 
     event Action<string>? ModAdded;
     event Action<string>? ModDeleted;

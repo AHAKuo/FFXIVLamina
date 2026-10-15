@@ -45,7 +45,7 @@ public static class GlamourerDesignParser
     {
         var draft = new DesignDraft();
         ParseMods(design["Mods"] as JArray, draft, Provenance.None);
-        return draft.Mods.Values.Select(f => f.Value).ToList();
+        return draft.Mods.Values.Select(c => c.ToModState()).ToList();
     }
 
     private static bool Flag(JObject obj, string key, bool fallback)
@@ -168,6 +168,7 @@ public static class GlamourerDesignParser
             var remove  = mod["Remove"]?.Type == JTokenType.Boolean && mod["Remove"]!.Value<bool>();
             var enabled = !remove && !string.Equals(mod["State"]?.Value<string>(), "Disabled", StringComparison.OrdinalIgnoreCase);
 
+            // A Glamourer association states the whole mod: enabled flag, priority and every group it lists.
             var state = new ModState
             {
                 ModDirectory = directory,
@@ -176,7 +177,7 @@ public static class GlamourerDesignParser
                 Priority     = mod["Priority"]?.Type == JTokenType.Integer ? mod["Priority"]!.Value<int>() : null,
                 Settings     = ParseModSettings(mod["Settings"] as JArray),
             };
-            draft.Mods[directory] = new Field<ModState>(state, source);
+            draft.AddMod(ModContribution.From(state, source));
         }
     }
 

@@ -99,15 +99,8 @@ public static class DesignDiffer
     public static string ModsHash(VirtualDesign d)
     {
         var sb = new StringBuilder(512);
-        foreach (var (k, v) in d.Mods.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            var m = v.Value;
-            sb.Append("D:").Append(k.ToLowerInvariant()).Append('=').Append(m.State).Append(',').Append(m.Priority ?? 0).Append(',');
-            if (m.Settings is not null)
-                foreach (var (g, opts) in m.Settings.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-                    sb.Append(g).Append(':').Append(string.Join('|', opts.OrderBy(o => o, StringComparer.Ordinal))).Append('/');
-            sb.Append(';');
-        }
+        foreach (var (_, c) in d.Mods.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+            sb.Append("D:").Append(c.ContentKey()).Append(';');
 
         return Hash(sb);
     }

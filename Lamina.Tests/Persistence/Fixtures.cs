@@ -98,5 +98,27 @@ public static class Fixtures
             new HonorificLayer { Title = "Rain Walker", IsPrefix = true, Color = new Vector3(1f, 0.5f, 0.25f), Glow = new Vector3(0.1f, 0.2f, 0.3f) },
             new HonorificLayer { Clear = true },
             new MoodlesLayer { Add = { Guid.NewGuid() }, AddPresets = { Guid.NewGuid() }, Remove = { Guid.NewGuid(), Guid.NewGuid() } },
+            new EquipmentLayer
+            {
+                Slots =
+                {
+                    [EquipSlot.Feet] = new SlotEdit { ItemId = NothingItems.IdFor(EquipSlot.Feet) },
+                    [EquipSlot.Body] = new SlotEdit { ApplyStains = true, Stain1 = 5, Stain2 = 7, Crest = true },
+                    [EquipSlot.Head] = new SlotEdit { ItemId = 10032 },
+                },
+                Meta = { [MetaIndex.HatVisible] = false, [MetaIndex.WeaponVisible] = true },
+            },
+            new AppearanceLayer
+            {
+                Customize  = { [CustomizeIndex.HairColor] = 60, [CustomizeIndex.Highlights] = 128, [CustomizeIndex.FacialFeature4] = 8 },
+                Wetness    = true,
+                Parameters =
+                {
+                    ["SkinDiffuse"] = new AdvancedParameter { Color = new Vector3(0.9f, 0.8f, 0.7f) },
+                    ["LipDiffuse"]  = new AdvancedParameter { Color = new Vector3(0.4f, 0.1f, 0.1f), Alpha = 0.6f },
+                    ["MuscleTone"]  = new AdvancedParameter { Scalar = 0.75f },
+                },
+            },
+            new PenumbraAdjustLayer { Mods = { new ModState { ModDirectory = "Eve", State = null, Priority = null, Settings = new() { ["Skin"] = new() { "Glossy" } } } } },
         };
 }

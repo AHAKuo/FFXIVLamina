@@ -39,7 +39,7 @@ public class GlamourerStateBuilderTests
         d.ModelId                          = new Field<uint>(7, Src);
         d.Parameters["SkinDiffuse"]        = new Field<JObject>(new JObject { ["Red"] = 1.0, ["Green"] = 0.5, ["Blue"] = 0.0 }, Src);
         d.Materials["999"]                 = new Field<JToken>(new JObject { ["X"] = 1 }, Src);
-        d.Mods["SomeMod"]                  = new Field<ModState>(new ModState { ModDirectory = "SomeMod" }, Src);
+        d.AddMod(ModContribution.From(new ModState { ModDirectory = "SomeMod" }, Src));
 
         var s = GlamourerStateBuilder.Build(Freeze(d));
         var equipment = (JObject)s["Equipment"]!;

@@ -173,19 +173,20 @@ public sealed class FakePenumbraBridge : FakeBridgeBase, IPenumbraBridge
     }
 
     public (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings, bool Inherited, bool Temporary)? GetCurrentModSettings(
-        Guid collectionId, string modDirectory)
+        Guid collectionId, string modDirectory, bool ignoreTemporary = false)
     {
-        Record(nameof(GetCurrentModSettings), collectionId, modDirectory);
+        Record(nameof(GetCurrentModSettings), collectionId, modDirectory, ignoreTemporary);
         if (!Available || !Collections.ContainsKey(collectionId) || !Mods.ContainsKey(modDirectory))
             return null;
 
-        if (TemporarySettings.TryGetValue(collectionId, out var temp) && temp.TryGetValue(modDirectory, out var t))
+        if (!ignoreTemporary && TemporarySettings.TryGetValue(collectionId, out var temp) && temp.TryGetValue(modDirectory, out var t))
             return (t.Enabled, t.Priority, t.Settings, false, true);
 
         if (PermanentSettings.TryGetValue(collectionId, out var perm) && perm.TryGetValue(modDirectory, out var p))
             return (p.Enabled, p.Priority, p.Settings.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value), p.Inherited, false);
 
-        return (false, 0, new Dictionary<string, IReadOnlyList<string>>(), false, false);
+        // Not configured in the collection: Penumbra answers with no settings tuple.
+        return null;
     }
 
     public void RaiseModAdded(string modDirectory)

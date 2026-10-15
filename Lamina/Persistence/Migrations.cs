@@ -25,8 +25,15 @@ public static class Migrations
     /// <summary> Name of the version property in every file. </summary>
     public const string VersionProperty = "version";
 
-    /// <summary> Steps shipped with this build. Empty while v1 is current; append new steps here, never reorder. </summary>
-    public static readonly IReadOnlyList<MigrationStep> Steps = new List<MigrationStep>();
+    /// <summary> Steps shipped with this build. Append new steps here, never reorder. </summary>
+    public static readonly IReadOnlyList<MigrationStep> Steps = new List<MigrationStep>
+    {
+        // Profile v1 → v2: Penumbra Adjust mod entries gained "applies" semantics (state / priority / each option group may be
+        // null = inherited) and the Equipment / Appearance layer kinds appeared. The JSON shape of v1 files is still valid:
+        // their entries set the state and every listed group, so nothing is rewritten; the bump only tells older builds
+        // (which cannot read a null state) that the file is newer.
+        new(FileKind.Profile, 1, _ => { }),
+    };
 
     /// <summary> Current version of each file kind. </summary>
     public static int CurrentVersion(FileKind kind)

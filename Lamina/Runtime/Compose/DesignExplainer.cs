@@ -45,8 +45,14 @@ public static class DesignExplainer
                 Line(sb, $"Parameter {key}", f.Value.ToString(Newtonsoft.Json.Formatting.None), f.Source);
             foreach (var (key, f) in d.Materials.OrderBy(kv => kv.Key, StringComparer.Ordinal))
                 Line(sb, $"Material {key}", "(advanced dye)", f.Source);
-            foreach (var (dir, f) in d.Mods.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
-                Line(sb, $"Mod {dir}", DescribeMod(f.Value), f.Source);
+            foreach (var (dir, c) in d.Mods.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                Line(sb, $"Mod {dir}", c.State is { } s ? (s.Value == ModToggle.Enable ? "enabled" : "disabled") : "(enabled flag inherited)", c.State?.Source ?? c.PrimarySource);
+                if (c.Priority is { } p)
+                    Line(sb, $"Mod {dir} priority", p.Value.ToString(), p.Source);
+                foreach (var (group, f) in c.Settings.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                    Line(sb, $"Mod {dir} / {group}", f.Value.Count == 0 ? "(none)" : string.Join(" | ", f.Value), f.Source);
+            }
             if (d.Honorific is { } h)
                 Line(sb, "Honorific", h.Value.Clear ? "clear" : $"\"{h.Value.Title}\" ({(h.Value.IsPrefix ? "prefix" : "suffix")})", h.Source);
             foreach (var (id, f) in d.Moodles.OrderBy(kv => kv.Key))
@@ -61,17 +67,6 @@ public static class DesignExplainer
         }
 
         return sb.ToString().TrimEnd();
-    }
-
-    private static string DescribeMod(ModState m)
-    {
-        var sb = new StringBuilder();
-        sb.Append(m.State == ModToggle.Enable ? "enabled" : "disabled");
-        if (m.Priority is { } p)
-            sb.Append(", priority ").Append(p);
-        if (m.Settings is { Count: > 0 })
-            sb.Append(", ").Append(string.Join("; ", m.Settings.Select(kv => $"{kv.Key} = {string.Join(" | ", kv.Value)}")));
-        return sb.ToString();
     }
 
     private static void Line(StringBuilder sb, string field, string value, Provenance source)

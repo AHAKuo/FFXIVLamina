@@ -3,7 +3,8 @@ namespace Lamina.Models;
 /// <summary> A complete Lamina setup: pass groups, passes, layers, ending with its targets. Saved to profiles/&lt;Id&gt;.json. </summary>
 public sealed class Profile
 {
-    public const int CurrentVersion = 1;
+    /// <summary> 2 since the Penumbra Adjust "applies" semantics and the Equipment / Appearance layers (see Migrations). </summary>
+    public const int CurrentVersion = 2;
 
     public int Version { get; set; } = CurrentVersion;
 

@@ -101,11 +101,10 @@ public sealed class Applier
                     complete = false;
                 }
 
-                foreach (var (dir, field) in design.Mods)
+                foreach (var (dir, contribution) in design.Mods)
                 {
-                    var mod      = field.Value;
-                    var settings = ToSettings(mod.Settings);
-                    var code     = _penumbra.SetTemporaryModSettings(collection, dir, mod.State == ModToggle.Enable, mod.Priority ?? 0, settings);
+                    var (enabled, priority, settings) = ResolveModValues(collection, dir, contribution);
+                    var code = _penumbra.SetTemporaryModSettings(collection, dir, enabled, priority, settings);
                     switch (code)
                     {
                         case PenumbraApiEc.Success:
@@ -278,10 +277,28 @@ public sealed class Applier
             redrawRequested, deferred, problems);
     }
 
-    private static IReadOnlyDictionary<string, IReadOnlyList<string>> ToSettings(Dictionary<string, List<string>>? settings)
+    /// <summary>
+    /// Completes a contribution with the parts it inherits (TDD 5.7): the mod's permanent settings in the collection
+    /// (temporary ones ignored, so another plugin's preview is never baked in). A mod not configured there inherits
+    /// "disabled, priority 0, Penumbra's default options" — which is what omitting the groups gives.
+    /// </summary>
+    private (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings) ResolveModValues(
+        Guid collection, string dir, ModContribution c)
     {
-        if (settings is null || settings.Count == 0)
-            return new Dictionary<string, IReadOnlyList<string>>();
-        return settings.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value.ToList());
+        // Option groups the entry does not list are always inherited, so the lookup is needed for every mod (one IPC call
+        // per mod per apply; applies only happen when the design changed).
+        var current = _penumbra.GetCurrentModSettings(collection, dir, ignoreTemporary: true);
+
+        var enabled  = c.State is { } state ? state.Value == ModToggle.Enable : current?.Enabled ?? false;
+        var priority = c.Priority is { } prio ? prio.Value : current?.Priority ?? 0;
+
+        var settings = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        if (current is { } cur)
+            foreach (var (group, options) in cur.Settings)
+                settings[group] = options.ToList();
+        foreach (var (group, field) in c.Settings)
+            settings[group] = field.Value.ToList();
+
+        return (enabled, priority, settings);
     }
 }

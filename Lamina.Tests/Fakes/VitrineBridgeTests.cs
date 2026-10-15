@@ -102,7 +102,7 @@ public class VitrineBridgeTests
         var draft = resolver.Resolve(layer, Provenance.None, out var reason);
 
         Assert.Null(reason);
-        var mod = draft!.Mods["Dir"].Value;
+        var mod = draft!.Mods["Dir"].ToModState();
         Assert.Equal(ModToggle.Enable, mod.State);
         Assert.Equal(3, mod.Priority);
         Assert.Equal(new[] { "B" }, mod.Settings!["Legs"]);

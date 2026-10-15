@@ -14,6 +14,12 @@ public sealed record JobEntry(uint Id, string Abbreviation, string Name, JobRole
 /// <summary> One duty as the catalog sees it. </summary>
 public sealed record DutyEntry(uint Id, string Name, ContentKind Kind, uint TerritoryId);
 
+/// <summary> One equippable item as the catalog sees it. </summary>
+public sealed record EquipItemEntry(uint Id, string Name, EquipSlot Slot, string Category, uint IconId);
+
+/// <summary> One dye as the catalog sees it (Rgb is 0xRRGGBB). </summary>
+public sealed record StainEntry(byte Id, string Name, uint Rgb);
+
 /// <summary>
 /// Game data lookups (Lumina sheets through <see cref="IDataManager"/>) with lazy caches. Used by the
 /// <see cref="StateTracker"/> to classify state and by the UI pickers to show names. All lookups return "#id"
@@ -37,11 +43,18 @@ public sealed class GameCatalog
     private readonly Lazy<IReadOnlyDictionary<uint, DutyEntry>> _dutyById;
     private readonly Lazy<IReadOnlyList<(uint Id, string Name)>> _regions;
     private readonly Lazy<IReadOnlyList<(uint Id, string Name)>> _worlds;
+    private readonly Lazy<IReadOnlyList<EquipItemEntry>> _equipItems;
+    private readonly Lazy<IReadOnlyDictionary<uint, EquipItemEntry>> _equipItemById;
+    private readonly Lazy<IReadOnlyList<StainEntry>> _stains;
 
     public GameCatalog(IDataManager data, IPluginLog log)
     {
         _data = data;
         _log  = log;
+        Appearance = new AppearanceCatalog(data, log);
+        _equipItems    = new(LoadEquipItems);
+        _equipItemById = new(() => _equipItems.Value.ToDictionary(i => i.Id));
+        _stains        = new(LoadStains);
 
         _territories    = new(LoadTerritories);
         _territoryById  = new(() => _territories.Value.ToDictionary(t => t.Id));
@@ -128,6 +141,27 @@ public sealed class GameCatalog
 
     public string WorldName(uint id)
         => _worlds.Value.FirstOrDefault(w => w.Id == id).Name ?? $"#{id}";
+
+    // ---- equipment, dyes, appearance ------------------------------------------------------------
+
+    /// <summary> Character-creation data for the Appearance layer editor. </summary>
+    public AppearanceCatalog Appearance { get; }
+
+    /// <summary> Every equippable item (one Glamourer slot each), sorted by name. </summary>
+    public IReadOnlyList<EquipItemEntry> EquipItems => _equipItems.Value;
+
+    public EquipItemEntry? EquipItem(uint id)
+        => _equipItemById.Value.GetValueOrDefault(id);
+
+    /// <summary> Display name of an item id, including Glamourer's "Nothing" ids. </summary>
+    public string ItemName(ulong id)
+        => NothingItems.IsNothing(id) ? "Nothing" : id <= uint.MaxValue && EquipItem((uint)id) is { } e ? e.Name : $"item #{id}";
+
+    /// <summary> Every dye (row 0 = "No Color"), in sheet order. </summary>
+    public IReadOnlyList<StainEntry> Stains => _stains.Value;
+
+    public string StainName(byte id)
+        => id == 0 ? "No dye" : _stains.Value.FirstOrDefault(s => s.Id == id)?.Name ?? $"#{id}";
 
     // ---- duties ---------------------------------------------------------------------------------
 
@@ -225,6 +259,75 @@ public sealed class GameCatalog
         }
 
         return result.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private IReadOnlyList<EquipItemEntry> LoadEquipItems()
+    {
+        var result = new List<EquipItemEntry>();
+        try
+        {
+            var sheet = _data.GetExcelSheet<Item>();
+            if (sheet is null)
+                return result;
+            foreach (var row in sheet)
+            {
+                var name = row.Name.ExtractText();
+                if (string.IsNullOrWhiteSpace(name) || SlotOf(row) is not { } slot)
+                    continue;
+                var category = row.ItemUICategory.ValueNullable?.Name.ExtractText() ?? string.Empty;
+                result.Add(new EquipItemEntry(row.RowId, name, slot, category, row.Icon));
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Lamina: failed to load the Item sheet.");
+        }
+
+        return result.OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase).ThenBy(i => i.Id).ToList();
+    }
+
+    /// <summary> The Glamourer slot an item goes into, or null when it is not equippable through Glamourer (waist, soul crystal, non-gear). </summary>
+    private static EquipSlot? SlotOf(in Item item)
+    {
+        if (item.EquipSlotCategory.ValueNullable is not { } c)
+            return null;
+        if (c.MainHand != 0) return EquipSlot.MainHand;
+        if (c.OffHand != 0)  return EquipSlot.OffHand;
+        if (c.Head != 0)     return EquipSlot.Head;
+        if (c.Body != 0)     return EquipSlot.Body;
+        if (c.Gloves != 0)   return EquipSlot.Hands;
+        if (c.Legs != 0)     return EquipSlot.Legs;
+        if (c.Feet != 0)     return EquipSlot.Feet;
+        if (c.Ears != 0)     return EquipSlot.Ears;
+        if (c.Neck != 0)     return EquipSlot.Neck;
+        if (c.Wrists != 0)   return EquipSlot.Wrists;
+        if (c.FingerR != 0)  return EquipSlot.RFinger;
+        if (c.FingerL != 0)  return EquipSlot.LFinger;
+        return null;
+    }
+
+    private IReadOnlyList<StainEntry> LoadStains()
+    {
+        var result = new List<StainEntry>();
+        try
+        {
+            var sheet = _data.GetExcelSheet<Stain>();
+            if (sheet is null)
+                return result;
+            foreach (var row in sheet)
+            {
+                var name = row.Name.ExtractText();
+                if (row.RowId > byte.MaxValue || string.IsNullOrWhiteSpace(name))
+                    continue;
+                result.Add(new StainEntry((byte)row.RowId, name, row.Color));
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Lamina: failed to load the Stain sheet.");
+        }
+
+        return result;
     }
 
     private IReadOnlyList<(uint Id, string Name)> LoadNamed<T>(Func<T, string> nameOf) where T : struct, Lumina.Excel.IExcelRow<T>

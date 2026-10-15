@@ -124,7 +124,7 @@ public class GlamourerDesignParserTests
         Assert.Empty(noMods.Mods);
         Assert.Equal(2, withMods.Mods.Count);
 
-        var wildkini = withMods.Mods["Wildkini"].Value;
+        var wildkini = withMods.Mods["Wildkini"].ToModState();
         Assert.Equal(ModToggle.Enable, wildkini.State);
         Assert.Equal(0, wildkini.Priority);
         Assert.Equal("Wildkini", wildkini.ModName);
@@ -151,11 +151,11 @@ public class GlamourerDesignParserTests
         var draft = GlamourerDesignParser.Parse(design, Src, includeMods: true);
 
         Assert.Equal(3, draft.Mods.Count);
-        Assert.Equal(ModToggle.Disable, draft.Mods["A"].Value.State);
-        Assert.Equal(3, draft.Mods["A"].Value.Priority);
-        Assert.Equal(ModToggle.Disable, draft.Mods["B"].Value.State);
-        Assert.Equal(ModToggle.Enable, draft.Mods["C"].Value.State);
-        Assert.Null(draft.Mods["C"].Value.Settings);
+        Assert.Equal(ModToggle.Disable, draft.Mods["A"].State!.Value.Value);
+        Assert.Equal(3, draft.Mods["A"].Priority!.Value.Value);
+        Assert.Equal(ModToggle.Disable, draft.Mods["B"].State!.Value.Value);
+        Assert.Equal(ModToggle.Enable, draft.Mods["C"].State!.Value.Value);
+        Assert.Empty(draft.Mods["C"].Settings);
     }
 
     [Fact]

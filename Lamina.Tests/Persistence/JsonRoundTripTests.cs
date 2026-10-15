@@ -135,6 +135,35 @@ public class JsonRoundTripTests
         Assert.Single(moodles.Add);
         Assert.Single(moodles.AddPresets);
         Assert.Equal(2, moodles.Remove.Count);
+
+        var equipment = Assert.IsType<EquipmentLayer>(reloaded[6]);
+        Assert.Equal(3, equipment.Slots.Count);
+        Assert.Equal(NothingItems.IdFor(EquipSlot.Feet), equipment.Slots[EquipSlot.Feet].ItemId);
+        Assert.Null(equipment.Slots[EquipSlot.Body].ItemId);
+        Assert.True(equipment.Slots[EquipSlot.Body].ApplyStains);
+        Assert.Equal((byte)5, equipment.Slots[EquipSlot.Body].Stain1);
+        Assert.Equal((byte)7, equipment.Slots[EquipSlot.Body].Stain2);
+        Assert.True(equipment.Slots[EquipSlot.Body].Crest);
+        Assert.Equal(10032ul, equipment.Slots[EquipSlot.Head].ItemId);
+        Assert.False(equipment.Meta[MetaIndex.HatVisible]);
+        Assert.True(equipment.Meta[MetaIndex.WeaponVisible]);
+
+        var appearance = Assert.IsType<AppearanceLayer>(reloaded[7]);
+        Assert.Equal(60, appearance.Customize[CustomizeIndex.HairColor]);
+        Assert.Equal(128, appearance.Customize[CustomizeIndex.Highlights]);
+        Assert.Equal(8, appearance.Customize[CustomizeIndex.FacialFeature4]);
+        Assert.True(appearance.Wetness);
+        Assert.Equal(0.6f, appearance.Parameters["LipDiffuse"].Alpha);
+        Assert.Equal(0.75f, appearance.Parameters["MuscleTone"].Scalar);
+        Assert.Equal(new System.Numerics.Vector3(0.9f, 0.8f, 0.7f), appearance.Parameters["SkinDiffuse"].Color);
+
+        // "Applies" semantics: an entry that only sets one group keeps state and priority inherited (null) after a round trip.
+        var partial = Assert.IsType<PenumbraAdjustLayer>(reloaded[8]).Mods.Single();
+        Assert.Null(partial.State);
+        Assert.Null(partial.Priority);
+        Assert.Equal(new[] { "Glossy" }, partial.Settings!["Skin"]);
+        Assert.Contains("\"kind\": \"Equipment\"", json);
+        Assert.Contains("\"kind\": \"Appearance\"", json);
     }
 
     [Fact]

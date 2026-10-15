@@ -33,6 +33,100 @@ public enum MoodleOp
 }
 
 /// <summary>
+/// What the design wants for one Penumbra mod, with provenance per part (TDD 5.7). Every part is optional: an unset part is
+/// inherited at apply time from the mod's effective settings in the Lamina collection. Mod entries merge per part, so a
+/// later pass can set one option group of a mod an earlier pass enabled without restating the rest.
+/// </summary>
+public sealed class ModContribution
+{
+    public ModContribution(string modDirectory, string? modName = null)
+    {
+        ModDirectory = modDirectory;
+        ModName      = modName;
+    }
+
+    public string ModDirectory { get; }
+
+    /// <summary> Display name when known (informational). </summary>
+    public string? ModName { get; private set; }
+
+    /// <summary> Enable / disable. Null = inherit. </summary>
+    public Field<ModToggle>? State { get; set; }
+
+    /// <summary> Priority. Null = inherit. </summary>
+    public Field<int>? Priority { get; set; }
+
+    /// <summary> Option group → enabled options, for the groups that are set. </summary>
+    public Dictionary<string, Field<List<string>>> Settings { get; } = new(StringComparer.Ordinal);
+
+    /// <summary> True when nothing is set (the entry would only inherit). </summary>
+    public bool IsEmpty
+        => State is null && Priority is null && Settings.Count == 0;
+
+    /// <summary> The source of the most significant part, for single-line displays. </summary>
+    public Provenance PrimarySource
+        => State?.Source ?? Priority?.Source ?? (Settings.Count > 0 ? Settings.Values.First().Source : Provenance.None);
+
+    /// <summary> Builds a contribution from a layer's mod state with one provenance for every set part. </summary>
+    public static ModContribution From(ModState state, Provenance source)
+    {
+        var c = new ModContribution(state.ModDirectory, state.ModName);
+        if (state.State is { } toggle)
+            c.State = new Field<ModToggle>(toggle, source);
+        if (state.Priority is { } priority)
+            c.Priority = new Field<int>(priority, source);
+        if (state.Settings is { } settings)
+            foreach (var (group, options) in settings)
+                c.Settings[group] = new Field<List<string>>(new List<string>(options), source);
+        return c;
+    }
+
+    public ModContribution Clone()
+    {
+        var c = new ModContribution(ModDirectory, ModName) { State = State, Priority = Priority };
+        foreach (var (group, field) in Settings)
+            c.Settings[group] = new Field<List<string>>(new List<string>(field.Value), field.Source);
+        return c;
+    }
+
+    /// <summary> Writes every set part of <paramref name="top"/> over this one, keeping the rest. </summary>
+    public void MergeOnTop(ModContribution top)
+    {
+        if (top.ModName is not null)
+            ModName = top.ModName;
+        if (top.State is { } state)
+            State = state;
+        if (top.Priority is { } priority)
+            Priority = priority;
+        foreach (var (group, field) in top.Settings)
+            Settings[group] = new Field<List<string>>(new List<string>(field.Value), field.Source);
+    }
+
+    /// <summary> The set parts as a plain <see cref="ModState"/> (unset parts stay null). </summary>
+    public ModState ToModState()
+        => new()
+        {
+            ModDirectory = ModDirectory,
+            ModName      = ModName,
+            State        = State?.Value,
+            Priority     = Priority?.Value,
+            Settings     = Settings.Count == 0 ? null : Settings.ToDictionary(kv => kv.Key, kv => new List<string>(kv.Value.Value), StringComparer.Ordinal),
+        };
+
+    /// <summary> Stable text of the content (no provenance), for hashing. </summary>
+    public string ContentKey()
+    {
+        var sb = new System.Text.StringBuilder(128);
+        sb.Append(ModDirectory.ToLowerInvariant()).Append('=');
+        sb.Append(State is { } s ? s.Value.ToString() : "~").Append(',');
+        sb.Append(Priority is { } p ? p.Value.ToString() : "~").Append(',');
+        foreach (var (g, f) in Settings.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            sb.Append(g).Append(':').Append(string.Join('|', f.Value.OrderBy(o => o, StringComparer.Ordinal))).Append('/');
+        return sb.ToString();
+    }
+}
+
+/// <summary>
 /// Mutable builder with the same shape as <see cref="VirtualDesign"/>. Every field is optional: unset = passthrough.
 /// A pass's smashed layers (Pass.FinalLayer) are a DesignDraft, and the compositor merges drafts on top of each other.
 /// Mods are keyed by mod directory, case-insensitive. Parameters / Materials are keyed by the Glamourer JSON key.
@@ -52,7 +146,8 @@ public sealed class DesignDraft
     public Dictionary<string, Field<JObject>> Parameters { get; } = new();
     /// <summary> Advanced dyes: Glamourer "Materials" entries, kept opaque. </summary>
     public Dictionary<string, Field<JToken>> Materials { get; } = new();
-    public Dictionary<string, Field<ModState>> Mods { get; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary> Mod directory → contribution. Entries merge per part (see <see cref="ModContribution"/>). </summary>
+    public Dictionary<string, ModContribution> Mods { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Field<HonorificTitle>? Honorific { get; set; }
     public Dictionary<Guid, Field<MoodleOp>> Moodles { get; } = new();
 
@@ -60,6 +155,15 @@ public sealed class DesignDraft
         => Items.Count == 0 && Stains.Count == 0 && Crests.Count == 0 && Bonus.Count == 0 && Customize.Count == 0
          && ModelId is null && Meta.Count == 0 && Parameters.Count == 0 && Materials.Count == 0 && Mods.Count == 0
          && Honorific is null && Moodles.Count == 0;
+
+    /// <summary> Adds a mod contribution, merging per part when the mod is already present. </summary>
+    public void AddMod(ModContribution contribution)
+    {
+        if (Mods.TryGetValue(contribution.ModDirectory, out var existing))
+            existing.MergeOnTop(contribution);
+        else
+            Mods[contribution.ModDirectory] = contribution.Clone();
+    }
 
     /// <summary> Writes every set field of <paramref name="top"/> over this draft. Unset fields in <paramref name="top"/> pass through. </summary>
     public void MergeOnTop(DesignDraft top)
@@ -73,7 +177,7 @@ public sealed class DesignDraft
         foreach (var (k, v) in top.Meta) Meta[k] = v;
         foreach (var (k, v) in top.Parameters) Parameters[k] = v;
         foreach (var (k, v) in top.Materials) Materials[k] = v;
-        foreach (var (k, v) in top.Mods) Mods[k] = v;
+        foreach (var (_, v) in top.Mods) AddMod(v);
         if (top.Honorific is { } title) Honorific = title;
         foreach (var (k, v) in top.Moodles) Moodles[k] = v;
     }
@@ -99,8 +203,8 @@ public sealed class DesignDraft
             foreach (var (k, v) in Materials) result.Materials[k] = v;
         }
         if (mask.Mods)
-            foreach (var (k, v) in Mods) result.Mods[k] = v;
-        // Honorific and Moodles are never masked (the mask only applies to Glamourer / Vitrine layers).
+            foreach (var (_, v) in Mods) result.AddMod(v);
+        // Honorific and Moodles are never masked (the mask only applies to Glamourer / Vitrine / Equipment / Appearance layers).
         if (Honorific is { } title) result.Honorific = title;
         foreach (var (k, v) in Moodles) result.Moodles[k] = v;
         return result;
@@ -130,7 +234,7 @@ public sealed class VirtualDesign
         Meta                = new Dictionary<MetaIndex, Field<bool>>(draft.Meta);
         Parameters          = new Dictionary<string, Field<JObject>>(draft.Parameters);
         Materials           = new Dictionary<string, Field<JToken>>(draft.Materials);
-        Mods                = new Dictionary<string, Field<ModState>>(draft.Mods, StringComparer.OrdinalIgnoreCase);
+        Mods                = draft.Mods.Where(kv => !kv.Value.IsEmpty).ToDictionary(kv => kv.Key, kv => kv.Value.Clone(), StringComparer.OrdinalIgnoreCase);
         Honorific           = draft.Honorific;
         Moodles             = new Dictionary<Guid, Field<MoodleOp>>(draft.Moodles);
         ProfileId           = profileId;
@@ -150,7 +254,8 @@ public sealed class VirtualDesign
     public IReadOnlyDictionary<MetaIndex, Field<bool>> Meta { get; }
     public IReadOnlyDictionary<string, Field<JObject>> Parameters { get; }
     public IReadOnlyDictionary<string, Field<JToken>> Materials { get; }
-    public IReadOnlyDictionary<string, Field<ModState>> Mods { get; }
+    /// <summary> Mod directory → contribution. Entries that set nothing are dropped at freeze time. </summary>
+    public IReadOnlyDictionary<string, ModContribution> Mods { get; }
     public Field<HonorificTitle>? Honorific { get; }
     public IReadOnlyDictionary<Guid, Field<MoodleOp>> Moodles { get; }
 
@@ -190,15 +295,8 @@ public static class DesignHasher
         foreach (var (k, v) in d.Meta.OrderBy(kv => kv.Key)) sb.Append("M:").Append(k).Append('=').Append(v.Value).Append(';');
         foreach (var (k, v) in d.Parameters.OrderBy(kv => kv.Key, StringComparer.Ordinal)) sb.Append("P:").Append(k).Append('=').Append(v.Value.ToString(Newtonsoft.Json.Formatting.None)).Append(';');
         foreach (var (k, v) in d.Materials.OrderBy(kv => kv.Key, StringComparer.Ordinal)) sb.Append("A:").Append(k).Append('=').Append(v.Value.ToString(Newtonsoft.Json.Formatting.None)).Append(';');
-        foreach (var (k, v) in d.Mods.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            var m = v.Value;
-            sb.Append("D:").Append(k.ToLowerInvariant()).Append('=').Append(m.State).Append(',').Append(m.Priority ?? 0).Append(',');
-            if (m.Settings is not null)
-                foreach (var (g, opts) in m.Settings.OrderBy(kv => kv.Key, StringComparer.Ordinal))
-                    sb.Append(g).Append(':').Append(string.Join('|', opts.OrderBy(o => o, StringComparer.Ordinal))).Append('/');
-            sb.Append(';');
-        }
+        foreach (var (_, v) in d.Mods.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+            sb.Append("D:").Append(v.ContentKey()).Append(';');
         if (d.Honorific is { } h)
             sb.Append("H:").Append(h.Value.Clear).Append(',').Append(h.Value.Title).Append(',').Append(h.Value.IsPrefix).Append(',').Append(h.Value.Color).Append(',').Append(h.Value.Glow).Append(';');
         foreach (var (k, v) in d.Moodles.OrderBy(kv => kv.Key)) sb.Append("O:").Append(k).Append('=').Append(v.Value).Append(';');
