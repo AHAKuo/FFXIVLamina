@@ -75,21 +75,21 @@ any other layer and Lamina applies them in the same single batch.
       `/lam why` name the layer, Add Layer mini menu entries, tests for cascade order (e.g. Glamourer design then an
       Appearance layer overriding only hair colour; a final "Sitting" group with an Equipment layer removing feet).
 
-## G) Penumbra (Additive) layer and Penumbra defaults
-Today a Penumbra Adjust layer replaces the whole mod entry when it merges (`Mods[dir] = v`), so a later pass cannot
-tweak one option group of a mod an earlier pass enabled without restating every group.
-- [ ] **Penumbra (Additive) layer** (`kind: "PenumbraAdditive"`): per mod, only the option groups listed are changed;
-      everything else is inherited from the mod state already in the running draft (the earlier pass's Eve body
-      settings), or, when the mod is not in the draft yet, from the mod's effective settings in the player's collection
-      (`GetCurrentModSettings`) with enabled = true. Priority and enabled are optional overrides. Example: a "Humid"
-      pass that only sets Eve's skin group to "Glossy" to simulate sweat. Merge rule documented in TDD 5.7; provenance
-      per option group so `/lam why` shows which pass set the gloss.
-- [ ] **Defaults when adding a mod**: when a mod is added to a Penumbra Adjust or Additive layer, prefill its settings
-      from Penumbra (the collection's current settings via `GetCurrentModSettings`, else each group's default option)
-      so the user starts from what Penumbra would do and only changes what they mean to. A "Reset to Penumbra
-      defaults" button per mod.
-- [ ] Settings editor shows, per group, whether the value is "inherited" (dimmed) or "set by this layer"; Additive
-      layers only serialise the groups the user touched.
+## G) Penumbra Adjust: per-setting "applies" checkboxes and Penumbra defaults
+One Penumbra layer, not two. Today the layer replaces the whole mod entry when it merges (`Mods[dir] = v`), so a later
+pass cannot tweak one option group of a mod an earlier pass enabled without restating every group.
+- [ ] **Per-setting "applies" checkbox** in the Penumbra Adjust layer's settings editor: every option group (and the
+      enabled flag and priority) gets a checkbox beside it. Checked = this layer sets the value; unchecked = inherited
+      from the mod state already in the running draft (the earlier pass's Eve body settings), or, when the mod is not
+      in the draft yet, from the mod's effective settings in the player's collection (`GetCurrentModSettings`). Two
+      buttons per mod: **Apply all** and **Disable all**. Example: a "Humid" pass whose Eve entry only ticks the skin
+      group and sets it to "Glossy" to simulate sweat.
+- [ ] Merge rule (TDD 5.7): mod entries merge per option group, not wholesale; provenance per group so `/lam why`
+      shows which pass set the gloss. Existing saved layers migrate with every group ticked (same behaviour as today).
+- [ ] **Defaults when adding a mod**: prefill the settings from Penumbra (the collection's current settings via
+      `GetCurrentModSettings`, else each group's default option) so the user starts from what Penumbra would do and only
+      changes what they mean to; a "Reset to Penumbra defaults" button per mod.
+- [ ] Editor shows unticked groups dimmed with their inherited value; only ticked groups are serialised as set.
 
 ## H) Stretch: File Redirect layer, then Texture Overlay (decals)
 Decals on bodies or gear mean producing a texture, not toggling a setting. Two stages:
