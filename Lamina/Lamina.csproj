@@ -9,7 +9,7 @@
 
 • Virtual designs combine rulesets into one final Glamourer, Penumbra, Honorific and Moodles state.
 • Switch between characters and situations in one click without flicker.
-• Vitrine auto-organizes your Penumbra mods by what they affect and manages enable/disable/priority for you.</Description>
+• Works with Vitrine (separate, optional plugin): use its designs as layers in your passes.</Description>
     <Tags>glamourer;penumbra;honorific;moodles;appearance;design;automation;roleplay;rp;mods</Tags>
     <RepoUrl>https://github.com/AHAKuo/FFXIVLamina</RepoUrl>
     <IconUrl>https://raw.githubusercontent.com/AHAKuo/FFXIVLamina/main/images/icon.png</IconUrl>
@@ -19,7 +19,6 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Vitrine\Vitrine.csproj" />
     <ProjectReference Include="..\Glamourer.Api\Glamourer.Api.csproj" />
     <ProjectReference Include="..\Penumbra.Api\Penumbra.Api.csproj" />
   </ItemGroup>
