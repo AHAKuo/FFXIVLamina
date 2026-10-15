@@ -44,7 +44,8 @@ public sealed partial class LaminaWindow
         ImGui.Separator();
         var local = Target.LocalPlayer();
         var active = _s.Profiles.ActiveProfileFor(local);
-        Guid? toDelete = null;
+        Guid? toDelete    = null;
+        Guid? toDuplicate = null;
 
         using var table = ImRaii.Table("##profiles", 5, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp);
         if (!table)
@@ -56,7 +57,8 @@ public sealed partial class LaminaWindow
         ImGui.TableSetupColumn("##actions", ImGuiTableColumnFlags.WidthFixed, 190 * Widgets.Scale);
         ImGui.TableHeadersRow();
 
-        foreach (var p in _s.Profiles.Profiles)
+        // Iterate a snapshot: row actions below may add or remove profiles, which must happen after the loop.
+        foreach (var p in _s.Profiles.Profiles.ToList())
         {
             using var id = ImRaii.PushId(p.Id.ToString());
             ImGui.TableNextRow();
@@ -120,11 +122,8 @@ public sealed partial class LaminaWindow
                 _profileRenameBuffer = p.Name;
             }
             ImGui.SameLine(0, 2);
-            if (Widgets.IconButton(FontAwesomeIcon.Clone, "Duplicate") && _s.Profiles.DuplicateProfile(p.Id) is { } copy)
-            {
-                Select(copy.Id);
-                SetStatus($"Duplicated as {copy.Name}.", Widgets.Good);
-            }
+            if (Widgets.IconButton(FontAwesomeIcon.Clone, "Duplicate"))
+                toDuplicate = p.Id;
             ImGui.SameLine(0, 2);
             if (Widgets.IconButton(FontAwesomeIcon.FileExport, "Export to clipboard"))
             {
@@ -139,6 +138,12 @@ public sealed partial class LaminaWindow
             }
             if (_profileDeleteId == p.Id && Widgets.ConfirmModal("Delete profile?", $"Delete profile \"{p.Name}\" with all its groups and passes? A backup copy is kept in the backups folder."))
                 toDelete = p.Id;
+        }
+
+        if (toDuplicate is { } dup && _s.Profiles.DuplicateProfile(dup) is { } copy)
+        {
+            Select(copy.Id);
+            SetStatus($"Duplicated as {copy.Name}.", Widgets.Good);
         }
 
         if (toDelete is { } del && _s.Profiles.DeleteProfile(del))
