@@ -56,6 +56,25 @@ to and which exact affected piece goes in each slot. Lamina should honour it.
       (default on when the design has an Apply Action); Macro Override masks still apply to those slots.
 - [ ] Preview / `/lam why`: provenance names the Vitrine design for equipped pieces.
 
+## F) Native layer types: Equipment Changes and Appearance Changes
+Purpose: stop creating throwaway Glamourer designs for one-field tweaks ("only hair colour white at the end of the
+cascade", "no feet while sitting"). These layers write straight into the virtual design, so they cascade and mask like
+any other layer and Lamina applies them in the same single batch.
+- [ ] **Equipment Changes layer** (`kind: "Equipment"`): a list of per-slot edits, each one of
+      - *Visibility*: hat / visor / weapon / viera ears toggles (MetaIndex);
+      - *Dyes*: dye 1 / dye 2 per slot (Stains) from the game's Stain sheet, with "keep item, change dye only";
+      - *Gear*: an item from the game's Item sheet per slot (searchable picker by name, slot filtered; weapons pair
+        main hand / off hand), with "Nothing" (remove the piece, e.g. feet while sitting) and crest on / off.
+      Unset slots stay passthrough.
+- [ ] **Appearance Changes layer** (`kind: "Appearance"`): per-field edits of CustomizeIndex values (hair style, hair
+      colour, highlights on / off + colour, eye colour right / left for odd eyes, eye shape, height, face, skin colour,
+      lip colour, facial features, tail / ears, bust, face paint...) with pickers that show only values valid for the
+      character's current clan / gender (GameCatalog + the actor's state from Glamourer), plus advanced RGB
+      parameters (skin, hair, highlights, eyes, lips) where the user wants exact colours. Unset fields passthrough.
+- [ ] Models + JSON kinds, resolver → DesignDraft fields with provenance, Macro Override masks apply, Preview and
+      `/lam why` name the layer, Add Layer mini menu entries, tests for cascade order (e.g. Glamourer design then an
+      Appearance layer overriding only hair colour; a final "Sitting" group with an Equipment layer removing feet).
+
 ## Later (TDD section 14)
 - [ ] Moodles presets: expand to statuses so cleanup can remove them (needs preset-info IPC in the bridge).
 - [ ] Other targets (characters / players).
