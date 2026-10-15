@@ -129,8 +129,12 @@ public sealed class GlamourerBridge : BridgeBase, IGlamourerBridge, IGlamourerUn
     /// the item is shown now but not written into the persistent state, so it is a try-on that the next Lamina apply or a revert undoes.
     /// No Lock flag: a try-on must never create a lock Lamina did not ask for.
     /// </remarks>
+    /// <summary> Glamourer reads both stain slots from the list (an empty list throws inside the call); pad with 0 = no dye. </summary>
+    private static IReadOnlyList<byte> PadStains(IReadOnlyList<byte> stains)
+        => stains.Count >= 2 ? stains : new[] { stains.Count > 0 ? stains[0] : (byte)0, (byte)0 };
+
     public GlamourerApiEc SetItem(int objectIndex, ApiEquipSlot slot, ulong itemId, IReadOnlyList<byte> stains)
-        => Call(() => _setItem.Invoke(objectIndex, slot, itemId, stains, IpcConstants.GlamourerKey, ApplyFlag.Once),
+        => Call(() => _setItem.Invoke(objectIndex, slot, itemId, PadStains(stains), IpcConstants.GlamourerKey, ApplyFlag.Once),
             GlamourerApiEc.UnknownError, nameof(SetItem));
 
     public GlamourerApiEc UnlockAndRevertToAutomation(int objectIndex)
