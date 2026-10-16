@@ -50,6 +50,56 @@ public class VitrineBridgeTests
     }
 
     [Fact]
+    public void ParseDesigns_ReadsCustomizations_AndMatchesThemToClanAndGender()
+    {
+        const string json = """
+            [{ "id": "6c0c7d3e-1b2a-5e4f-9a8b-7c6d5e4f3a2b", "name": "Hair 194", "category": "Hair", "isAuto": true, "baseDesignId": null,
+               "mods": [ { "modDirectory": "Hair194", "modName": "Hair 194", "enabled": true, "priority": 0, "settings": null } ],
+               "applyAction": null, "pieces": {}, "clearOtherSlots": false,
+               "customizations": [
+                 { "race": "Midlander", "gender": 1, "key": "Hairstyle", "value": 194, "name": "Customization: Midlander Female Hair 194" },
+                 { "race": "AuRa",      "gender": 1, "key": "Hairstyle", "value": 194, "name": "Customization: Au Ra Female Hair 194" },
+                 { "race": "Viera",     "gender": 0, "key": "TailShape", "value": 2,   "name": "Customization: Viera Male Face (Ears) 2" },
+                 { "race": "Viera",     "gender": 0, "key": "Horns",     "value": 1,   "name": "future key" }
+               ] }]
+            """;
+
+        var design = Assert.Single(VitrineBridge.ParseDesigns(json));
+        Assert.Equal(4, design.Customizations!.Count);
+        var first = design.Customizations[0];
+        Assert.Equal("Midlander", first.Race);
+        Assert.Equal(1, first.Gender);
+        Assert.Equal("Hairstyle", first.Key);
+        Assert.Equal(194, first.Value);
+        Assert.Equal("Customization: Midlander Female Hair 194", first.Name);
+        Assert.Equal(CustomizeIndex.Hairstyle, first.Index);
+        Assert.Equal("Hair 194", first.ShortLabel);
+        Assert.Equal("Midlander female", first.Audience);
+        Assert.Equal("Au Ra female", design.Customizations[1].Audience);
+        Assert.Null(design.Customizations[3].Index); // unknown key: carried but never applied
+        Assert.True(design.HasCustomizations);
+        Assert.Equal(3, design.ResolvedCustomizations().Count());
+
+        var midlanderFemale = Assert.Single(design.MatchingCustomizations(clan: 1, gender: 1));
+        Assert.Equal((CustomizeIndex.Hairstyle, first), midlanderFemale);
+        var xaelaFemale = Assert.Single(design.MatchingCustomizations(clan: 12, gender: 1));
+        Assert.Equal("AuRa", xaelaFemale.Entry.Race);
+        var veenaMale = Assert.Single(design.MatchingCustomizations(clan: 16, gender: 0));
+        Assert.Equal(CustomizeIndex.TailShape, veenaMale.Index);
+        Assert.Empty(design.MatchingCustomizations(clan: 1, gender: 0));  // Midlander male: no entry
+        Assert.Empty(design.MatchingCustomizations(clan: 0, gender: 1));  // no character
+    }
+
+    [Fact]
+    public void ParseDesigns_WithoutCustomizations_HasNone()
+    {
+        var design = Assert.Single(VitrineBridge.ParseDesigns("[" + DocumentedDesign + "]"));
+        Assert.Null(design.Customizations);
+        Assert.False(design.HasCustomizations);
+        Assert.Empty(design.MatchingCustomizations(1, 1));
+    }
+
+    [Fact]
     public void ParseDesign_SingleObject_AndEmptyPayload()
     {
         Assert.NotNull(VitrineBridge.ParseDesign(DocumentedDesign));

@@ -162,6 +162,15 @@ internal sealed class LayerEditor
         }
         if (v.ClearOtherSlotsOverride ?? design?.ClearOtherSlots ?? false)
             text += " · clears other slots";
+        if (v.ApplyCustomizations && design is { HasCustomizations: true })
+        {
+            // The entry fitting the player when known ("Hair 194"), else the generic note until a character is loaded.
+            var snapshot = _s.Engine.Snapshot;
+            var fitting  = design.MatchingCustomizations(snapshot.ClanId, snapshot.Gender).Select(m => m.Entry.ShortLabel).ToList();
+            text += fitting.Count > 0                                                     ? $" · {string.Join(", ", fitting)}"
+                : Ipc.VitrineCustomizationInfo.ModelRaceOfClan(snapshot.ClanId) is null ? " · hair/face/tail"
+                                                                                   : " · no hair/face/tail for you";
+        }
         return Widgets.Truncate(text, 70);
     }
 
@@ -251,6 +260,7 @@ internal sealed class LayerEditor
             v.SettingsOverride       = null;
             v.SlotOverride           = null;
             v.ClearOtherSlotsOverride = null;
+            v.ApplyCustomizations    = true;
             changed                  = true;
         }
         if (v.VitrineDesignId != Guid.Empty && design is null)
@@ -302,10 +312,25 @@ internal sealed class LayerEditor
             changed = true;
         }
 
+        if (design.HasCustomizations)
+        {
+            ImGui.Spacing();
+            var applyCustomizations = v.ApplyCustomizations;
+            if (ImGui.Checkbox("Also apply hair / face / tail##vitcust", ref applyCustomizations))
+            {
+                v.ApplyCustomizations = applyCustomizations;
+                changed               = true;
+            }
+            Widgets.Tooltip("Sets the design's hair / face / tail value for your character, since the mod shows nothing unless that value is selected.\n"
+                          + "Entries: " + string.Join("; ", design.ResolvedCustomizations().Select(c => $"{c.Entry.Audience}: {c.Entry.ShortLabel}")));
+        }
+
         var pieces = design.ResolvedPieces().ToList();
         if (pieces.Count == 0)
         {
-            Widgets.Hint("This design equips no pieces (no equippable items, or Vitrine is older than 0.3): only its mod settings are layered.");
+            Widgets.Hint(design.HasCustomizations
+                ? "This design equips no pieces: its mod and hair / face / tail value are layered."
+                : "This design equips no pieces (no equippable items, or Vitrine is older than 0.3): only its mod settings are layered.");
             return changed;
         }
 

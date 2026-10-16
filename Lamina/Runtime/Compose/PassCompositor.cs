@@ -35,14 +35,15 @@ public sealed class PassCompositor
     /// <param name="resolver"> Layer resolver. </param>
     /// <param name="direction"> Evaluation direction. </param>
     /// <param name="skipped"> Layers that contributed nothing, with reasons. </param>
+    /// <param name="snapshot"> The game state the design is composed for (Vitrine layers pick the hair / face / tail entry fitting the player). </param>
     public DesignDraft BuildPassLayer(Pass pass, Provenance basis, string groupName, LayerResolver resolver, EvaluationDirection direction,
-        List<(Guid LayerId, string Reason)> skipped)
+        List<(Guid LayerId, string Reason)> skipped, GameStateSnapshot? snapshot = null)
     {
         var final = new DesignDraft();
         foreach (var layer in Ordered(pass.Layers, direction))
         {
             var source = new Provenance(basis.GroupId, pass.Id, layer.Id, $"{groupName} / {pass.Name} / {layer.Describe()}");
-            var draft  = resolver.Resolve(layer, source, out var reason);
+            var draft  = resolver.Resolve(layer, source, out var reason, snapshot);
             if (draft is null)
             {
                 skipped.Add((layer.Id, reason ?? "skipped"));
@@ -80,7 +81,7 @@ public sealed class PassCompositor
 
         if (pass is not null && group is not null)
         {
-            var draft = BuildPassLayer(pass, new Provenance(group.Id, pass.Id, null, string.Empty), group.Name, resolver, direction, focusSkipped);
+            var draft = BuildPassLayer(pass, new Provenance(group.Id, pass.Id, null, string.Empty), group.Name, resolver, direction, focusSkipped, snapshot);
             focus      = draft.Freeze(profile.Id, group.Id, Array.Empty<Guid>(), new[] { pass.Id });
             focusMatch = pass.Enabled && evaluator.EvaluateInstant(pass.Conditions, snapshot)
                       && group.Enabled && evaluator.EvaluateInstant(group.Conditions, snapshot);
@@ -89,7 +90,7 @@ public sealed class PassCompositor
         {
             var draft   = new DesignDraft();
             var matched = new List<Guid>();
-            MergeGroup(group, draft, matched, focusSkipped, resolver, direction, stack => evaluator.EvaluateInstant(stack, snapshot));
+            MergeGroup(group, draft, matched, focusSkipped, resolver, direction, stack => evaluator.EvaluateInstant(stack, snapshot), snapshot);
             focus      = draft.Freeze(profile.Id, group.Id, Array.Empty<Guid>(), matched);
             focusMatch = group.Enabled && evaluator.EvaluateInstant(group.Conditions, snapshot);
         }
@@ -118,7 +119,7 @@ public sealed class PassCompositor
         }
 
         if (active is not null)
-            MergeGroup(active, draft, matched, skipped, resolver, direction, isTrue);
+            MergeGroup(active, draft, matched, skipped, resolver, direction, isTrue, snapshot);
 
         // 2. Final groups: every true one, by priority (lower first, higher wins).
         var finals = new List<Guid>();
@@ -127,7 +128,7 @@ public sealed class PassCompositor
             if (!isTrue(group.Conditions))
                 continue;
             finals.Add(group.Id);
-            MergeGroup(group, draft, matched, skipped, resolver, direction, isTrue);
+            MergeGroup(group, draft, matched, skipped, resolver, direction, isTrue, snapshot);
         }
 
         var design = draft.Freeze(profile.Id, active?.Id, finals, matched);
@@ -136,14 +137,14 @@ public sealed class PassCompositor
     }
 
     private void MergeGroup(PassGroup group, DesignDraft draft, List<Guid> matched, List<(Guid, string)> skipped,
-        LayerResolver resolver, EvaluationDirection direction, Func<ConditionStack, bool> isTrue)
+        LayerResolver resolver, EvaluationDirection direction, Func<ConditionStack, bool> isTrue, GameStateSnapshot? snapshot)
     {
         foreach (var pass in Ordered(group.Passes, direction))
         {
             if (!pass.Enabled || !isTrue(pass.Conditions))
                 continue;
             matched.Add(pass.Id);
-            var final = BuildPassLayer(pass, new Provenance(group.Id, pass.Id, null, string.Empty), group.Name, resolver, direction, skipped);
+            var final = BuildPassLayer(pass, new Provenance(group.Id, pass.Id, null, string.Empty), group.Name, resolver, direction, skipped, snapshot);
             draft.MergeOnTop(final);
         }
     }

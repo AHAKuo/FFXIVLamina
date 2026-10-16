@@ -33,7 +33,11 @@ public sealed class LayerResolver
         => _cache;
 
     /// <summary> Resolves a layer. Returns null with a reason when the layer contributes nothing. </summary>
-    public DesignDraft? Resolve(Layer layer, Provenance source, out string? skipReason)
+    /// <param name="layer"> The layer. </param>
+    /// <param name="source"> Provenance stamped on every field the layer sets. </param>
+    /// <param name="skipReason"> Why the layer contributed nothing, when it did not. </param>
+    /// <param name="snapshot"> The game state the design is composed for; Vitrine layers pick the hair / face / tail entry fitting its clan and gender. Null sets no customization. </param>
+    public DesignDraft? Resolve(Layer layer, Provenance source, out string? skipReason, GameStateSnapshot? snapshot = null)
     {
         skipReason = null;
         if (!layer.Enabled)
@@ -47,7 +51,7 @@ public sealed class LayerResolver
             case GlamourerLayer g:
                 return ResolveGlamourer(g, source, out skipReason);
             case VitrineDesignLayer v:
-                return ResolveVitrine(v, source, out skipReason);
+                return ResolveVitrine(v, source, snapshot, out skipReason);
             case PenumbraAdjustLayer p:
                 return ResolvePenumbraAdjust(p, source, out skipReason);
             case EquipmentLayer e:
@@ -83,7 +87,7 @@ public sealed class LayerResolver
         return draft;
     }
 
-    private DesignDraft? ResolveVitrine(VitrineDesignLayer layer, Provenance source, out string? skipReason)
+    private DesignDraft? ResolveVitrine(VitrineDesignLayer layer, Provenance source, GameStateSnapshot? snapshot, out string? skipReason)
     {
         skipReason = null;
         var vitrine = _vitrine();
@@ -133,6 +137,12 @@ public sealed class LayerResolver
                 continue;
             draft.Items[slot] = new Field<EquipItem>(new EquipItem(piece.ItemId), source);
         }
+
+        // A hair / face / tail mod shows nothing unless the character's customize value is the replaced one: set the entry made
+        // for the player's model race and gender (IPC 1.4). No fitting entry (or no snapshot) sets nothing; the mod still applies.
+        if (layer.ApplyCustomizations && snapshot is not null)
+            foreach (var (index, entry) in design.MatchingCustomizations(snapshot.ClanId, snapshot.Gender))
+                draft.Customize[index] = new Field<int>(entry.Value, source);
 
         // Clearing: every gear slot the layer does not fill (masked-out pieces included) is emptied, so an outfit worn
         // before does not bleed through. The layer's override wins over the design's flag.

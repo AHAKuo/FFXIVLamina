@@ -53,6 +53,13 @@ public sealed class VitrineDesignLayer : Layer
     /// </summary>
     public bool? ClearOtherSlotsOverride { get; set; }
 
+    /// <summary>
+    /// Also sets the design's hair / face / tail value for the character: the entry of the design's customizations made for
+    /// the player's clan and gender, since a hair mod shows nothing unless that customize value is selected. Default on;
+    /// layers saved before the field existed gain the behaviour.
+    /// </summary>
+    public bool ApplyCustomizations { get; set; } = true;
+
     public override string Describe() => $"Vitrine design {VitrineDesignId}";
 }
 
