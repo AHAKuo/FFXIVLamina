@@ -212,6 +212,12 @@ unload / logout / profile switch. Both plugins are vendored as submodules (`Cust
 read from that source 2026-10-16 (Customize+ API 6.x in `CustomizePlus/CustomizePlus/Api/`, EzIPC names prefixed
 `CustomizePlus.`; Simple Heels API 2.5 in `SimpleHeels/SimpleHeels/ApiProvider.cs`, names prefixed `SimpleHeels.`).
 
+### Decision (2026-10-16): v1 uses the temporary routes
+Temp profile for Customize+, `RegisterPlayer` for Simple Heels: nothing persisted, clean revert, same as every other Lamina
+layer. Neither route is visible to Mare-style sync plugins (Customize+ `GetActiveProfileByActor` filters out temporary profiles;
+Simple Heels builds its `GetLocalPlayer` / `LocalChanged` report with `allowIpc = false`). Sync-visible variants are a later item
+(see Later). Full sync matrix per layer type in `DONTCOMMIT/mare-sync-notes.md`.
+
 ### Customize+ — has profiles (its "presets"), so the layer picks one
 - [ ] **Customize+ layer** (`kind: "CustomizePlus"`): picker over the user's profiles from `Profile.GetList` (tuple: UniqueId,
       Name, VirtualPath, Characters, Priority, IsEnabled; "somewhat heavy", cache it and refresh on `Profile.OnUpdate`
@@ -258,6 +264,10 @@ read from that source 2026-10-16 (Customize+ API 6.x in `CustomizePlus/Customize
       (document like the Glamourer note in section A if it does).
 
 ## Later (TDD section 14)
+- [ ] Mare-visible Customize+ / Simple Heels: Customize+ by enabling the picked saved profile (`Profile.EnableByUniqueId`,
+      restore previous enabled / priority on cleanup) since only non-temporary profiles are reported; Simple Heels by driving
+      `/heels temp set height X ... silent` through `ICommandManager.ProcessCommand` (the temp offset is in the local report;
+      re-issue after emote changes, zero every field to clear). Per-layer or per-plugin toggle "visible to sync plugins".
 - [ ] Moodles presets: expand to statuses so cleanup can remove them (needs preset-info IPC in the bridge).
 - [ ] Other targets (characters / players).
 - [ ] Location picker for `PlaceNameIds` (field exists, no UI picker yet).
