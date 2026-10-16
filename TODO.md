@@ -218,6 +218,42 @@ layer. Neither route is visible to Mare-style sync plugins (Customize+ `GetActiv
 Simple Heels builds its `GetLocalPlayer` / `LocalChanged` report with `allowIpc = false`). Sync-visible variants are a later item
 (see Later). Full sync matrix per layer type in `DONTCOMMIT/mare-sync-notes.md`.
 
+### Implemented 2026-10-16 (unverified in game)
+- [x] `CustomizePlusLayer { ProfileId, ProfileName }` and `SimpleHeelsLayer { Offset, Relative = true }`, registered in `LayerKinds`
+      (display "Customize+" / "Simple Heels"), JSON round trip, importer warnings via the generic unknown-kind path.
+- [x] Virtual design: `DesignDraft.CustomizePlusBones` (bone name → `CustomizePlusBone`, merged per bone, later pass wins) and
+      `DesignDraft.SimpleHeels` (`HeelsOffset(Offset, Relative)`, later pass replaces); both unmasked; in the content hash.
+- [x] Bridges: `CustomizePlusBridge` (EzIPC labels, API breaking 6 + `General.IsValid`, list / bones / set temp / delete temp,
+      `Profile.OnUpdate` → `ProfilesChanged`) with `CustomizePlusProfileCache` (like the Glamourer design cache; invalidated on
+      profile changes, availability flips, reapply); `SimpleHeelsBridge` (API 2.x, `RegisterPlayer` with `{"DefaultOffset": x}`,
+      `UnregisterPlayer`, `GetLocalPlayer` / `LocalChanged` → `GetLocalOffset` / `LocalOffsetChanged`).
+- [x] Resolver (skip reasons: no profile selected / Customize+ not installed / profile not found / no bone edits), differ
+      (`CustomizePlusChanged`, `HeelsChanged`), applier (temp profile set / deleted, ProfileNotFound on delete = already gone;
+      heels registered as `player's own offset + Offset` when Relative, re-registered by the engine when `LocalChanged` moves the
+      base), cleanup (full and profile switch), `AppliedStateStore` (`CustomizePlusHash`, `CustomizePlusTemporaryId`, `HeelsSet`,
+      `HeelsBase`), `ApplyInfo` / `CleanupResult` fields, `/lam why`, Preview, debug overlay, Settings / About rows.
+- [x] UI: Add Layer entries greyed out with a reason when the plugin is missing; Customize+ card = profile picker + broken-link
+      text; Simple Heels card = height drag (−2..2 m, 3 decimals) + "Add to my current offset" checkbox; both cards state that
+      Mare-style sync plugins do not see them.
+- [x] Tests: 515 (resolver, cascade, mask, cache, bridge JSON, differ, applier, cleanup, fakes). Old tests that used
+      "CustomizePlus" as a placeholder unknown kind now use "FutureKind".
+- [x] Customize+ profile list went stale (found in game 2026-10-16: a new "Default" profile did not show until a character
+      was assigned). Cause, from source: `Profile.OnUpdate` only fires when the profile *active on the local player* changes
+      (`OnArmatureChanged` / editor `OnTemplateChanged`); creating or editing a profile with no character assigned raises nothing.
+      Fix: `CustomizePlusProfileCache.InvalidateProfiles()`, the UI re-reads the list on every cache refresh (stale / 60 s) while
+      the window is open, and the card has a Refresh button (list + bones + engine re-evaluate). The card now says that Lamina
+      copies the bones onto your character as a temporary profile, so the saved profile needs neither to be enabled nor to have
+      a character assigned. Edited bones of a profile that is not active on you also need Refresh (same event limitation).
+- [ ] Templates directly instead of profiles: not possible over IPC. There is no template list; templates are only reachable
+      through a profile (`Profile.GetTemplates(profileId)`, `Enable/DisableTemplateByUniqueId`). Possible later: a per-template
+      picker inside the chosen profile (apply only some of its templates). `GetByUniqueId` already skips templates disabled in
+      the profile.
+- [ ] Verify in game: the temporary Customize+ profile shows, replaces an earlier one, and clears on pass end / toggle off /
+      profile switch / unload. Simple Heels verified in game 2026-10-16 (works). Still to check: relative mode follows a
+      shoe swap (`LocalChanged`) and the player's per-shoe config returns after unregister; the registered heel offset shows, relative mode follows a shoe swap (`LocalChanged`), and the player's per-shoe config
+      returns after unregister; neither plugin's own automation fights Lamina; the EzIPC tuple types for `Profile.GetList`
+      deserialize across the IPC boundary (if not: fall back to the JSON of `GetByUniqueId` only and list profiles differently).
+
 ### Customize+ — has profiles (its "presets"), so the layer picks one
 - [ ] **Customize+ layer** (`kind: "CustomizePlus"`): picker over the user's profiles from `Profile.GetList` (tuple: UniqueId,
       Name, VirtualPath, Characters, Priority, IsEnabled; "somewhat heavy", cache it and refresh on `Profile.OnUpdate`
@@ -263,11 +299,34 @@ Simple Heels builds its `GetLocalPlayer` / `LocalChanged` report with `allowIpc 
       offset shows and clears; per-shoe offsets come back after unregister; neither plugin's own automation fights Lamina
       (document like the Glamourer note in section A if it does).
 
+## L) Server info bar (DTR) actions
+Wanted 2026-10-16. Clickable entries in the Dalamud server info bar (`IDtrBar.Get("Lamina ...")`, `OnClick`), each one
+configurable on its own in Settings (show / hide per action; order follows the Dalamud DTR settings). Entries are disabled by
+default and only shown when the user turns them on.
+- [ ] **Reapply**: same as the Reapply button / `/lam reapply` (`Engine.RequestReapply()`); tooltip shows the last apply time
+      and the active profile name.
+- [ ] **On / Off toggle**: flips `LaminaConfig.Enabled` (off runs the full cleanup, on re-applies), text shows the state
+      (e.g. "Lamina: On" / "Lamina: Off", muted color when off); tooltip explains what off does.
+- [ ] Settings → "Server info bar" section: one checkbox per action, hint that position / order is changed in Dalamud's own
+      DTR settings. Entries are created / removed when the checkbox flips and removed on unload.
+- [ ] Later candidates, same pattern: profile switcher (left click cycles enabled profile, right click opens the window),
+      current profile name display.
+
 ## Later (TDD section 14)
 - [ ] Mare-visible Customize+ / Simple Heels: Customize+ by enabling the picked saved profile (`Profile.EnableByUniqueId`,
       restore previous enabled / priority on cleanup) since only non-temporary profiles are reported; Simple Heels by driving
       `/heels temp set height X ... silent` through `ICommandManager.ProcessCommand` (the temp offset is in the local report;
       re-issue after emote changes, zero every field to clear). Per-layer or per-plugin toggle "visible to sync plugins".
 - [ ] Moodles presets: expand to statuses so cleanup can remove them (needs preset-info IPC in the bridge).
-- [ ] Other targets (characters / players).
+- [ ] Other targets (characters / players). Wanted 2026-10-16: a Lamina profile can target someone other than the local
+      player (name + home world); its passes apply while that character is rendered near you (object table lookup by name /
+      world, re-resolve on spawn / despawn, zone change, redraw). Rules: one Lamina profile active per target (the local
+      player stays a target like any other), and a target only receives what is valid for that actor: Customize+ temp profile
+      (`SetTemporaryProfileOnCharacter` takes any object index), Glamourer state (`ApplyState` by object index), Penumbra
+      temporary mods / collection assignment for that actor, Simple Heels `RegisterPlayer(objectIndex)`, decals; Honorific
+      and Moodles are local-player only (skip with a reason). Needs: a target picker on the profile (local / name + world),
+      per-target `AppliedStateStore` and cleanup when the target leaves the screen or the profile switches, conditions
+      evaluated against the target (or against the local player, decide per condition), `/lam why` per target. Today every
+      layer that is not actor-bound (Penumbra Adjust, Vitrine design mods in a shared collection) already leaks to whoever
+      uses that collection; the targeting work must make that explicit in the UI.
 - [ ] Location picker for `PlaceNameIds` (field exists, no UI picker yet).
