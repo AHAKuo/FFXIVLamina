@@ -208,18 +208,54 @@ matches, and its layers stack on top of the parent's.
 ## K) Customize+ and Simple Heels layer types
 Two more optional-plugin layers, same shape as Honorific / Moodles: an IPC bridge with availability tracking, the layer
 greyed out in Add Layer when the plugin is missing, existing layers skipped with "plugin missing", cleanup on toggle off /
-unload / logout / profile switch. Both plugins are vendored as submodules (`CustomizePlus/`, `SimpleHeels/`) for the IPC
-contracts; confirm the exact IPC names and payloads against that source before writing the bridges.
-- [ ] **Customize+ layer** (`kind: "CustomizePlus"`): pick a Customize+ profile by name / id (listed through the Customize+
-      IPC); the layer applies it to the player as a temporary profile and removes it on cleanup; later passes override earlier
-      ones; Macro Override masks apply; Preview and `/lam why` name the profile.
-- [ ] **Simple Heels layer** (`kind: "SimpleHeels"`): height offset (and the sitting / ground-sit offsets if the IPC exposes
-      them) applied to the player through the Simple Heels IPC and cleared on cleanup; later passes override earlier ones;
-      Macro Override masks apply; Preview and `/lam why` name the layer.
+unload / logout / profile switch. Both plugins are vendored as submodules (`CustomizePlus/`, `SimpleHeels/`); IPC surface
+read from that source 2026-10-16 (Customize+ API 6.x in `CustomizePlus/CustomizePlus/Api/`, EzIPC names prefixed
+`CustomizePlus.`; Simple Heels API 2.5 in `SimpleHeels/SimpleHeels/ApiProvider.cs`, names prefixed `SimpleHeels.`).
+
+### Customize+ — has profiles (its "presets"), so the layer picks one
+- [ ] **Customize+ layer** (`kind: "CustomizePlus"`): picker over the user's profiles from `Profile.GetList` (tuple: UniqueId,
+      Name, VirtualPath, Characters, Priority, IsEnabled; "somewhat heavy", cache it and refresh on `Profile.OnUpdate`
+      (object index, profile id; Guid.Empty = none)). Store the profile id + name; show "missing" when the id is gone.
+- [ ] Apply route = **temporary profile** (same as Mare, nothing persisted, sits above the user's normal profiles):
+      `Profile.GetByUniqueId(Guid) → (int, string? json)` gives `IPCCharacterProfile { Bones: { name → { Translation,
+      Rotation, Scaling, ChildScaling, ChildScaleIndependent, Propagate* } } }`; Lamina merges the bones of every matching layer
+      (later pass wins per bone, Macro Override masks apply) and calls `Profile.SetTemporaryProfileOnCharacter(ushort
+      objectIndex, string json) → (int, Guid?)`; cleanup / empty design calls `Profile.DeleteTemporaryProfileOnCharacter(ushort)`
+      (also `DeleteTemporaryProfileByUniqueId(Guid)`). Error codes are ints (0 = success). Check `General.GetApiVersion`
+      breaking == 6 and `General.IsValid` before use. `Profile.GetActiveProfileIdOnCharacter(ushort) → (int, Guid?)` for
+      `/lam why`.
+- [ ] Optional second mode, persistent: `Profile.EnableByUniqueId / DisableByUniqueId / SetPriorityByUniqueId(Guid, int)` and
+      per-template `Profile.GetTemplates(Guid) → (int, List<(UniqueId, Name, Bones, IsEnabled)>)`,
+      `EnableTemplateByUniqueId / DisableTemplateByUniqueId(Guid profile, Guid template)`. These write the user's Customize+
+      config, so only offer them as an explicit "toggle saved profile" layer if at all; the temp-profile route is the default.
+- [ ] Bones only: no clan / gender scaling or other knobs are exposed. Preview shows profile name + bone count.
+
+### Simple Heels — no presets over IPC, the layer is raw offsets
+- [ ] **Simple Heels layer** (`kind: "SimpleHeels"`): height offset (Y) and optionally full temp offset (X, Y, Z, rotation,
+      pitch, roll) plus per-emote offsets; later passes override; Macro Override masks apply.
+- [ ] IPC: `SimpleHeels.RegisterPlayer(int objectIndex, string json)` / `UnregisterPlayer(int)` (empty json also unregisters).
+      The json is `IpcCharacterConfig`: `DefaultOffset` (float Y), `EmoteConfigs` [{ Emote {EmoteModeId, CPoseState},
+      LinkedEmotes, Offset xyz, Rotation, RelativeOffset }], `TempOffset` {X,Y,Z,R,Pitch,Roll}, `MinionPosition`, `EmotePosition`,
+      `Tags` {string→string}, `CustomVoiceId`, `PluginVersion`. Honoured for the local player (`TryGetCharacterConfig` checks
+      `IpcAssignedData` first). `SimpleHeels.ApiVersion → (2, 5)`; `SimpleHeels.Ready` fires on load.
+- [ ] Caveat 1: while Lamina has a config registered, Simple Heels ignores the player's own per-footwear heel configs and uses
+      only the registered `DefaultOffset` (HeelsConfig / sitting offsets are not part of the IPC json). So the layer should
+      read the current resolved config (`SimpleHeels.GetLocalPlayer → string json`, and the `SimpleHeels.LocalChanged(string)`
+      event, both built with allowIpc = false so they keep reporting the user's real per-shoe offset) and register
+      `DefaultOffset = resolved + Lamina delta`, re-registering when `LocalChanged` fires (debounced 250 ms upstream).
+      Offer "absolute" vs "add to current" in the editor.
+- [ ] Caveat 2: Mare syncs from `GetLocalPlayer` / `LocalChanged`, which report the user's own config, so other Mare users will
+      not see the Lamina offset. Document it on the card.
+- [ ] Also available: `SimpleHeels.RegisterEmoteOverride(int objectIndex, uint emoteModeId, byte cPose)` / `ClearEmoteOverride(int)`
+      (force which emote config is active); `SetTag / GetTag / RemoveTag(int, string[, string])` + `TagChanged` event (free
+      key/value store other plugins read). Not needed for v1.
+
+### Shared
 - [ ] Bridges `ICustomizePlusBridge` / `ISimpleHeelsBridge` with fakes, availability tracking, JSON kinds, models, Add Layer
       entries, tests for cascade order, masks and cleanup.
-- [ ] Verify in game: the temporary Customize+ profile shows and clears; the heel offset shows and clears; neither plugin's own
-      automation fights Lamina (document like the Glamourer note in section A if it does).
+- [ ] Verify in game: the temporary Customize+ profile shows and clears and wins over the user's assigned profile; the heel
+      offset shows and clears; per-shoe offsets come back after unregister; neither plugin's own automation fights Lamina
+      (document like the Glamourer note in section A if it does).
 
 ## Later (TDD section 14)
 - [ ] Moodles presets: expand to statuses so cleanup can remove them (needs preset-info IPC in the bridge).
