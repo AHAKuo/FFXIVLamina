@@ -123,18 +123,28 @@ pass can tweak one option group of a mod an earlier pass enabled without restati
 - [ ] Verify in game: inherited values track the collection after "Re-read collection"; a "Humid" pass that only ticks
       the skin group leaves the body group of an earlier pass untouched.
 
-## H) Stretch: File Redirect layer, then Texture Overlay (decals)
-Decals on bodies or gear mean producing a texture, not toggling a setting. Two stages:
-- [ ] **File Redirect layer** (`kind: "FileRedirect"`): game path → file on disk, registered as a Penumbra temporary mod
-      (`AddTemporaryMod` with Lamina's tag, removed on cleanup / `RemoveTemporaryMod`). Any one-file swap without a
-      Penumbra mod. Foundation for the next stage.
-- [ ] **Texture Overlay layer** (`kind: "TextureOverlay"`): a PNG decal + target (body skin diffuse, or a gear item's
-      material texture) + UV position / scale / rotation. Lamina resolves the texture currently in use on the character
-      (Penumbra resolve / resource tree APIs, so body mods like Eve or Bibo+ are respected), composites the decal, writes
-      a `.tex` into the cache keyed by content hash (rebuilt only when inputs change), and redirects it through the File
-      Redirect machinery. Caveats to design for: UV layouts differ per body (vanilla / Eve / Bibo+) so the editor needs
-      a UV template preview; seams distort; Dawntrail skin uses diffuse + mask + normal + index (colour decals in the
-      diffuse first, other maps later); encode cost must never land on the apply path.
+## H) Decal layer — done, verified in game (2026-10-16)
+A PNG projected onto the player's skin: click the character to place it, Size / Rotation / Opacity sliders, baked into the
+skin diffuse the clicked spot samples and redirected with one Penumbra temporary mod (`Lamina.Decal`, priority 9000).
+Design: texture-space projection in the character's rest pose (`Lamina/Decals/Bake`), live skin meshes from the draw
+object's own models posed through XivLiveMesh (racial deformer `human.pbd`, shape keys, attribute visibility) and picked
+with the game camera's ray (`Lamina/Decals/Mesh`, `XivLiveMesh/` vendored from Proteus, AGPL), bake cache + BC7 through
+Penumbra's converter + temp mod (`Lamina/Decals/Publish`), one card in the layer editor with pick mode and a debug mesh
+overlay (`Lamina/UI`). 411 unit tests.
+
+### Verified in game
+- Placement on body-mod skin (Eve), gear-provided skin (Midlander-authored tops on a Miqo'te, deformer on), freely named
+  outfit skin materials (classified by `skin.shpk`), several skin textures on one body (each baked separately), the face.
+- Hidden geometry (Eve's attribute-gated neck/seam parts, piercings) no longer catches clicks or paint.
+- Bake / convert / redirect / redraw loop, cache hits, temp mod removal on layer removal, profile switch and unload.
+
+### Known limits
+- A click must land on true skin: a spot covered by a cloth mesh that reuses the skin texture region (sheer tops) can
+  paint under the cloth. The hover label names the surface and part before the click.
+- Mirrored UV bodies show the decal on both sides (warned in the card). Diffuse only (no normal / mask relief).
+- `atr_lod` is treated as always enabled (LOD 0 detail parts); if an outfit's main skin ever misses the pick, check the
+  census line in the log first.
+- Mare: the redirected file lives in `<config>/decals/cache`; not checked whether sync picks temporary-mod files up.
 
 ## I) Sub-passes
 A pass can contain sub-passes that are gated by their parent: a sub-pass is only evaluated while the parent pass
