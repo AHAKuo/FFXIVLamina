@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
+using Lamina.Decals;
 using Lamina.Ipc;
 using Lamina.Models;
 using Lamina.Runtime;
@@ -10,6 +11,8 @@ namespace Lamina.UI;
 
 public sealed partial class LaminaWindow
 {
+    private readonly DecalImageStore _images;
+
     private static readonly string[] DirectionNames = { "Top to bottom (bottom wins)", "Bottom to top (top wins)" };
     private static readonly string[] RedrawNames    = { "Defer when unsafe", "Immediate", "Never (manual /lam redraw)" };
     private static readonly string[] FallbackNames  = { "Game state", "Glamourer automation" };
@@ -208,6 +211,36 @@ public sealed partial class LaminaWindow
         }
         ImGui.SameLine();
         Widgets.Hint(_s.Profiles.HasPendingSaves ? "unsaved changes (auto-saves in a second)" : "all changes saved");
+        ImGui.Spacing();
+
+        // ---- decals ----
+        ImGui.TextColored(Widgets.Accent, "Decals");
+        if (_s.DecalPublisher is null)
+        {
+            Widgets.Hint("The decal feature is unavailable.");
+        }
+        else
+        {
+            var ctrl = ImGui.GetIO().KeyCtrl;
+            using (ImRaii.Disabled(!ctrl))
+            {
+                if (ImGui.Button("Clean up decal leftovers") && ctrl)
+                    CleanUpDecals(DecalCleanupMode.Unused);
+            }
+            Widgets.Tooltip("Hold Ctrl. Forgets remembered bakes other than the installed one, deletes bake files the installed decal mod does not use, "
+                          + "deletes images no layer references, and removes a leftover decal mod from the collection when no decals are applied.");
+            ImGui.SameLine();
+            using (ImRaii.Disabled(!ctrl))
+            using (ImRaii.PushColor(ImGuiCol.Text, Widgets.Bad))
+            {
+                if (ImGui.Button("Clear all decal data") && ctrl)
+                    CleanUpDecals(DecalCleanupMode.Everything);
+            }
+            Widgets.Tooltip("Hold Ctrl. Destructive: removes the decal mod, every bake and every imported image, referenced or not. "
+                          + "Decal layers keep their image name and show \"missing image\" until you pick the image again.");
+            ImGui.SameLine();
+            Widgets.Hint("hold Ctrl");
+        }
         if (_s.Profiles.LoadErrors.Count > 0)
         {
             ImGui.TextColored(Widgets.Warn, "Problems while loading:");
@@ -236,5 +269,39 @@ public sealed partial class LaminaWindow
         Widgets.Hint(required ? "required" : "optional");
         if (required && !bridge.Available)
             Widgets.Tooltip($"{bridge.PluginName} is required. Install and enable it; Lamina picks it up automatically.");
+    }
+
+    /// <summary>
+    /// The two decal maintenance buttons: leftovers only, or everything. Images are pruned here (the publisher does not know
+    /// the profiles); after a full clear the engine forgets its decal bookkeeping so the next evaluation publishes anew.
+    /// </summary>
+    private void CleanUpDecals(DecalCleanupMode mode)
+    {
+        if (_s.DecalPublisher is not { } publisher)
+            return;
+
+        var engine    = _s.Engine;
+        var removeMod = mode == DecalCleanupMode.Everything || !engine.DecalsApplied;
+        var result    = publisher.CleanUp(engine.CollectionId, mode, removeMod);
+        var images    = 0;
+        try
+        {
+            images = _images.Prune(mode == DecalCleanupMode.Everything ? Array.Empty<string>() : DecalImageStore.ReferencedImages(_s.Profiles.Profiles)).Count;
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Warning(ex, "Pruning decal images failed.");
+        }
+
+        if (mode == DecalCleanupMode.Everything)
+            engine.ForgetDecals(redraw: result.TemporaryModRemoved);
+
+        var text = $"Decal {(mode == DecalCleanupMode.Everything ? "clear" : "cleanup")}: {result.MapsForgotten} remembered map(s) forgotten, "
+                 + $"{result.BakesDeleted} bake(s) and {result.TempFilesDeleted} temp file(s) deleted, {images} image(s) deleted, "
+                 + $"decal mod {(result.TemporaryModRemoved ? "removed" : "kept")}.";
+        if (result.Problems.Count > 0)
+            text += " Problems: " + string.Join("; ", result.Problems);
+        _s.Log.Information(text);
+        SetStatus(text, result.Problems.Count > 0 ? Widgets.Warn : Widgets.Good, 10f);
     }
 }

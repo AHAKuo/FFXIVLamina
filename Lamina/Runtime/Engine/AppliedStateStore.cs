@@ -1,3 +1,5 @@
+using Lamina.Decals;
+
 namespace Lamina.Runtime.Engine;
 
 /// <summary>
@@ -42,6 +44,28 @@ public sealed class AppliedStateStore
     public bool DecalsApplied
         => DecalsHash is not null;
 
+    /// <summary>
+    /// Decals the applier did not publish yet because the same apply (or an earlier one) asked for a redraw: the bake must be
+    /// projected onto the outfit that redraw loads, not the one still on screen. <see cref="DecalFollowUp"/> publishes them
+    /// once the character was redrawn and its models are loaded. Null when nothing waits. <see cref="DecalsHash"/> already
+    /// names them, so the differ does not retrigger.
+    /// </summary>
+    public IReadOnlyList<DecalSpec>? PendingDecals { get; set; }
+
+    /// <summary>
+    /// Identity of the player's draw object (<see cref="ISkinMeshProvider.DrawObjectState"/>) the last publish was prepared
+    /// against; a different identity later means another outfit is drawn and the bake may no longer fit. Null when unknown.
+    /// </summary>
+    public string? DecalsDrawKey { get; set; }
+
+    /// <summary> Forgets the decal section: nothing published, nothing pending, no draw object recorded. </summary>
+    public void ForgetDecals()
+    {
+        DecalsHash    = null;
+        PendingDecals = null;
+        DecalsDrawKey = null;
+    }
+
     /// <summary> The Honorific title Lamina set (including an explicit clear), or null when Lamina never touched the title. </summary>
     public HonorificTitle? HonorificSet { get; set; }
 
@@ -74,7 +98,7 @@ public sealed class AppliedStateStore
         GlamourerHash = keepGlamourer ? glamourer : null;
         ModsHash      = null;
         ModsWritten   = 0;
-        DecalsHash    = null;
+        ForgetDecals();
         HonorificSet  = null;
         MoodlesAdded.Clear();
         PresetsApplied.Clear();

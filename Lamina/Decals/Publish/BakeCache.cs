@@ -96,6 +96,29 @@ public static class BakeCache
         return deleted;
     }
 
+    /// <summary>
+    /// Cleanup sweep: deletes every .tex file not in <paramref name="keep"/> and every .tmp file in the cache folder
+    /// (<paramref name="keep"/> empty deletes every bake). Files that cannot be deleted (still open) are skipped.
+    /// </summary>
+    /// <returns> How many bakes and how many temporary files were deleted. </returns>
+    public static (int Bakes, int TempFiles) Sweep(string cacheDirectory, IReadOnlyCollection<string> keep)
+    {
+        if (!Directory.Exists(cacheDirectory))
+            return (0, 0);
+
+        var kept      = new HashSet<string>(keep.Select(Path.GetFullPath), StringComparer.OrdinalIgnoreCase);
+        var directory = new DirectoryInfo(cacheDirectory);
+        var bakes     = 0;
+        var temps     = 0;
+        foreach (var file in directory.EnumerateFiles("*.tex", SearchOption.TopDirectoryOnly))
+            if (!kept.Contains(file.FullName) && TryDelete(file))
+                bakes++;
+        foreach (var temp in directory.EnumerateFiles("*.tmp", SearchOption.TopDirectoryOnly))
+            if (TryDelete(temp))
+                temps++;
+        return (bakes, temps);
+    }
+
     private static bool TryDelete(FileInfo file)
     {
         try

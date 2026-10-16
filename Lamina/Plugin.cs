@@ -75,6 +75,19 @@ public sealed class Plugin : IDalamudPlugin
 
         profiles.SaveFailed += (what, ex) => Log.Error(ex, $"Saving {what} failed.");
 
+        // Decal images no layer references any more are leftovers (the layer that used them is gone or changed its image).
+        try
+        {
+            var images = new DecalImageStore(DecalPaths.ImageDirectory(PluginInterface.GetPluginConfigDirectory()));
+            var pruned = images.Prune(DecalImageStore.ReferencedImages(profiles.Profiles));
+            if (pruned.Count > 0)
+                Log.Information($"Decal images: removed {pruned.Count} unreferenced image(s).");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Pruning decal images failed.");
+        }
+
         var glamourer = Track(new GlamourerBridge(PluginInterface, Log, Framework));
         var penumbra  = Track(new PenumbraBridge(PluginInterface, Log, Framework));
         var honorific = Track(new HonorificBridge(PluginInterface, Log, Framework));
@@ -121,7 +134,7 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         var engine = Track(new LaminaEngine(profiles, tracker, evaluator, compositor, resolver, cache, glamourer, penumbra, honorific, moodles,
-            vitrine, Framework, ObjectTable, ClientState, Condition, catalog, Log, clock, decals));
+            vitrine, Framework, ObjectTable, ClientState, Condition, catalog, Log, clock, decals, skinMeshes));
         _engine = engine;
         _ipc    = new LaminaIpc(PluginInterface, Framework, engine, Log);
 

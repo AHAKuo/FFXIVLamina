@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Interface.Textures;
@@ -18,6 +19,9 @@ namespace Lamina.Decals.Publish;
 /// <see cref="Publish"/> and <see cref="Clear"/> are framework-thread calls; decoding, baking and conversion run on the thread
 /// pool; <see cref="Completed"/> fires on the framework thread once the redirect is in place. A newer publish or a clear
 /// supersedes a running publish: the stale run neither redirects nor completes.
+/// Before any of that, a publish computes a cheap situation key (drawn outfit, mods, decals, image stamps, collection): the
+/// situation already installed needs nothing at all, a remembered one re-installs its redirect map without baking
+/// (<see cref="RedirectLedger"/>), and only a new situation walks the full path.
 /// </summary>
 public sealed class DecalPublisher : IDecalPublisher, IDisposable
 {
@@ -33,9 +37,15 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
     private readonly string _imageDirectory;
     private readonly string _cacheDirectory;
 
-    /// <summary> Diffuse game path → the real upstream file it last resolved to, so a stale redirect to our own bake can be bypassed. Framework thread. </summary>
-    private readonly Dictionary<string, string> _upstream = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Diffuse game path → the real upstream file it last resolved to and the mods key it was resolved under, so a redirect to
+    /// our own bake can be bypassed without taking the mod out while the mods are unchanged. Framework thread.
+    /// </summary>
+    private readonly Dictionary<string, (string Upstream, string? ModsKey)> _upstream = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, RgbaImage> _decalImages = new(StringComparer.Ordinal);
+
+    /// <summary> What is installed per collection, to tell an identical re-install (no redraw) from a change. Framework thread. </summary>
+    private readonly RedirectLedger _ledger = new();
     private readonly HashSet<string> _logged = new(StringComparer.Ordinal);
     private readonly object _lock = new();
 
@@ -63,6 +73,8 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
         _log            = log;
         _imageDirectory = imageDirectory;
         _cacheDirectory = cacheDirectory;
+        // Penumbra drops every temporary mod when it unloads: whatever was installed is gone, and the next install counts as a change.
+        _penumbra.AvailabilityChanged += OnPenumbraAvailabilityChanged;
     }
 
     /// <inheritdoc/>
@@ -73,7 +85,7 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
     public event Action<DecalPublishResult>? Completed;
 
     /// <inheritdoc/>
-    public void Publish(Guid collectionId, int objectIndex, IReadOnlyList<DecalSpec> decals)
+    public void Publish(Guid collectionId, int objectIndex, IReadOnlyList<DecalSpec> decals, string? modsKey = null)
     {
         if (_disposed)
             return;
@@ -89,17 +101,96 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
             if (!_framework.IsInFrameworkUpdateThread)
                 LogOnce("Decal publish called off the framework thread; the mesh snapshot may be unavailable.");
 
+            // Fast paths: the installed situation needs nothing; a remembered situation re-installs its bakes without baking.
+            var situation = SituationKey(collectionId, decals, modsKey);
+            if (situation is not null)
+            {
+                if (_ledger.IsInstalled(collectionId, situation))
+                {
+                    _log.Debug("Decals: the installed bakes already match the drawn outfit, mods and decals; nothing to do.");
+                    return;
+                }
+
+                if (TryReinstall(collectionId, situation))
+                    return;
+            }
+
             var run      = Supersede();
             var problems = new List<string>();
-            var jobs     = Prepare(collectionId, objectIndex, decals, problems);
+            var jobs     = Prepare(collectionId, objectIndex, decals, modsKey, problems);
+            var protect  = _ledger.ReferencedFiles();
 
             Interlocked.Increment(ref _inFlight);
-            _ = Task.Run(() => RunAsync(run, collectionId, jobs, problems));
+            _ = Task.Run(() => RunAsync(run, collectionId, situation, jobs, protect, problems));
         }
         catch (Exception ex)
         {
             LogOnce($"Decal publish could not start: {ex.Message}", ex);
         }
+    }
+
+    /// <summary>
+    /// Everything that decides a publish's result, read without building meshes: the collection, the mods key, the drawn
+    /// models (files, shape / attribute masks, load states) and every decal with its image file's stamp. Null while nothing is
+    /// drawn or the models are still loading (a transient key must not be remembered).
+    /// </summary>
+    private string? SituationKey(Guid collectionId, IReadOnlyList<DecalSpec> decals, string? modsKey)
+    {
+        var draw = _meshes.DrawObjectState();
+        if (draw is null || !draw.Loaded)
+            return null;
+
+        var sb = new StringBuilder(256);
+        sb.Append(collectionId.ToString("N")).Append('\n').Append(modsKey ?? string.Empty).Append('\n').Append(draw.Key).Append('\n');
+        foreach (var spec in decals)
+            sb.Append(spec.ContentKey()).Append('|').Append(ImageStamp(spec.ImageFile)).Append('\n');
+        return sb.ToString();
+    }
+
+    /// <summary> Name, size and last write time of a decal image, so an edited image is a new situation. </summary>
+    private string ImageStamp(string imageFile)
+    {
+        try
+        {
+            var info = new FileInfo(Path.Combine(_imageDirectory, imageFile));
+            return info.Exists
+                ? FormattableString.Invariant($"{imageFile.ToLowerInvariant()}|{info.Length}|{info.LastWriteTimeUtc.Ticks}")
+                : imageFile.ToLowerInvariant() + "|missing";
+        }
+        catch (Exception)
+        {
+            return imageFile.ToLowerInvariant() + "|unreadable";
+        }
+    }
+
+    /// <summary> Re-installs the redirect map remembered for the situation, when its bake files still exist; completes synchronously. </summary>
+    private bool TryReinstall(Guid collectionId, string situation)
+    {
+        var remembered = _ledger.Recall(situation);
+        if (remembered is null)
+            return false;
+
+        if (!remembered.Values.All(BakeCache.IsValidOutput))
+        {
+            _ledger.Drop(situation);
+            return false;
+        }
+
+        Supersede();
+        var code = _penumbra.AddTemporaryMod(DecalPaths.TemporaryModTag, collectionId, remembered, DecalPaths.TemporaryModPriority);
+        if (code != PenumbraApiEc.Success)
+        {
+            LogOnce($"Could not re-install the remembered decal mod ({code}); baking instead.");
+            _ledger.Forget(collectionId);
+            return false;
+        }
+
+        foreach (var file in remembered.Values)
+            BakeCache.Touch(file);
+        var changed = _ledger.Install(collectionId, situation, remembered);
+        _log.Information($"Decal redirects re-installed from memory in collection {collectionId}: {remembered.Count} surface(s), {(changed ? "changed" : "unchanged")}.");
+        Completed?.Invoke(new DecalPublishResult(true, remembered.Count, Array.Empty<string>(), changed));
+        return true;
     }
 
     /// <inheritdoc/>
@@ -111,6 +202,7 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
         try
         {
             Supersede();
+            _ledger.Forget(collectionId);
             var code = _penumbra.RemoveTemporaryMod(DecalPaths.TemporaryModTag, collectionId, DecalPaths.TemporaryModPriority);
             if (code is not PenumbraApiEc.Success and not PenumbraApiEc.NothingChanged)
                 LogOnce($"Could not remove the decal mod from collection {collectionId}: {code}");
@@ -121,12 +213,71 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
         }
     }
 
+    /// <inheritdoc/>
+    public DecalCleanupResult CleanUp(Guid? collectionId, DecalCleanupMode mode, bool removeTemporaryMod)
+    {
+        var problems = new List<string>();
+        var maps     = 0;
+        var bakes    = 0;
+        var temps    = 0;
+        var removed  = false;
+        try
+        {
+            // A run in flight would install into a collection this is about to clean; it is dropped (its temp file, still open, survives until next time).
+            Supersede();
+
+            if (mode == DecalCleanupMode.Everything || removeTemporaryMod)
+            {
+                if (collectionId is { } collection && _penumbra.Available)
+                {
+                    var code = _penumbra.RemoveTemporaryMod(DecalPaths.TemporaryModTag, collection, DecalPaths.TemporaryModPriority);
+                    if (code is PenumbraApiEc.Success or PenumbraApiEc.NothingChanged)
+                        removed = true;
+                    else
+                        problems.Add($"could not remove the decal mod: {code}");
+                    _ledger.Forget(collection);
+                }
+                else
+                {
+                    problems.Add("the temporary mod could not be removed: Penumbra or the collection is unavailable");
+                }
+
+                _upstream.Clear();
+            }
+
+            if (mode == DecalCleanupMode.Everything)
+            {
+                maps           = _ledger.ForgetAll();
+                (bakes, temps) = BakeCache.Sweep(_cacheDirectory, Array.Empty<string>());
+            }
+            else
+            {
+                maps           = _ledger.KeepOnly(collectionId is { } c ? _ledger.InstalledSituation(c) : null);
+                (bakes, temps) = BakeCache.Sweep(_cacheDirectory, _ledger.InstalledFiles());
+            }
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"cleanup failed: {ex.Message}");
+            LogOnce($"Decal cleanup failed: {ex.Message}", ex);
+        }
+
+        return new DecalCleanupResult(maps, bakes, temps, removed, problems);
+    }
+
     /// <summary> Cancels a running publish. Nothing is removed from Penumbra here: the engine's cleanup does that. </summary>
     public void Dispose()
     {
         _disposed = true;
+        _penumbra.AvailabilityChanged -= OnPenumbraAvailabilityChanged;
         lock (_lock)
             _cts?.Cancel();
+    }
+
+    private void OnPenumbraAvailabilityChanged()
+    {
+        if (!_penumbra.Available)
+            _ledger.ForgetInstalled();
     }
 
     // ---- framework thread -------------------------------------------------------------------------
@@ -153,25 +304,21 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
     }
 
     /// <summary> Framework-thread part of a publish: the mesh snapshot, grouping, and the real upstream file of every surface. </summary>
-    private List<SurfaceJob> Prepare(Guid collectionId, int objectIndex, IReadOnlyList<DecalSpec> decals, List<string> problems)
+    private List<SurfaceJob> Prepare(Guid collectionId, int objectIndex, IReadOnlyList<DecalSpec> decals, string? modsKey, List<string> problems)
     {
         var jobs   = new List<SurfaceJob>();
         var meshes = _meshes.GetLocalPlayerMeshes();
-
-        // Our own redirect must be gone before resolving, so the diffuse path resolves to the real upstream file and not to a previous bake.
-        var removed = _penumbra.RemoveTemporaryMod(DecalPaths.TemporaryModTag, collectionId, DecalPaths.TemporaryModPriority);
-        if (removed is not PenumbraApiEc.Success and not PenumbraApiEc.NothingChanged)
-            problems.Add($"could not remove the previous decal mod: {removed}");
 
         var unplaceable = new List<DecalSpec>();
         var groups      = DecalSurfaceGroups.GroupByMesh(decals, meshes, unplaceable);
         foreach (var surface in unplaceable.Select(d => d.Placement.Surface).Distinct())
             problems.Add($"no {surface.ToString().ToLowerInvariant()} skin drawn");
 
+        var removed = false;
         foreach (var (mesh, specs) in groups)
         {
             var surface  = mesh.Surface;
-            var upstream = ResolveUpstream(mesh.DiffuseGamePath, _penumbra.ResolveGameObjectPath(mesh.DiffuseGamePath, objectIndex));
+            var upstream = ResolveUpstream(collectionId, objectIndex, mesh.DiffuseGamePath, modsKey, ref removed, problems);
             if (upstream is null)
             {
                 problems.Add($"{surface}: the skin texture still resolves to a previous bake and no upstream file is known");
@@ -186,24 +333,52 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
 
     /// <summary>
     /// The file the bake starts from: Penumbra's resolution of the diffuse path (the game path itself when unmodified). A path
-    /// inside the cache folder is one of our own bakes (the removal did not take, or another collection redirects there); the
-    /// upstream remembered for that game path is used instead, and without one the surface is reported.
+    /// inside the cache folder is one of our own bakes; the upstream remembered for that game path serves while the mods it
+    /// was resolved under are unchanged, so an installed decal mod normally stays in place. Otherwise our mod is taken out of
+    /// the collection (once per publish; re-added when the bake completes) and the path resolved again; if it still lands in
+    /// the cache (another collection redirects there) the remembered upstream is the last resort, and without one the surface
+    /// is reported.
     /// </summary>
-    private string? ResolveUpstream(string gamePath, string resolved)
+    private string? ResolveUpstream(Guid collectionId, int objectIndex, string gamePath, string? modsKey, ref bool removed, List<string> problems)
     {
-        if (string.IsNullOrEmpty(resolved))
-            resolved = gamePath;
+        var resolved = Resolve(gamePath, objectIndex);
+        if (!BakeCache.IsCacheFile(_cacheDirectory, resolved))
+            return Remember(gamePath, resolved, modsKey);
 
-        if (BakeCache.IsCacheFile(_cacheDirectory, resolved))
-            return _upstream.TryGetValue(gamePath, out var remembered) ? remembered : null;
+        if (_upstream.TryGetValue(gamePath, out var known) && string.Equals(known.ModsKey, modsKey, StringComparison.Ordinal))
+            return known.Upstream;
 
-        _upstream[gamePath] = resolved;
-        return resolved;
+        if (!removed)
+        {
+            removed = true;
+            var code = _penumbra.RemoveTemporaryMod(DecalPaths.TemporaryModTag, collectionId, DecalPaths.TemporaryModPriority);
+            if (code is not PenumbraApiEc.Success and not PenumbraApiEc.NothingChanged)
+                problems.Add($"could not remove the previous decal mod: {code}");
+            _ledger.MarkRemoved(collectionId);
+
+            resolved = Resolve(gamePath, objectIndex);
+            if (!BakeCache.IsCacheFile(_cacheDirectory, resolved))
+                return Remember(gamePath, resolved, modsKey);
+        }
+
+        return _upstream.TryGetValue(gamePath, out known) ? known.Upstream : null;
+    }
+
+    private string Resolve(string gamePath, int objectIndex)
+    {
+        var resolved = _penumbra.ResolveGameObjectPath(gamePath, objectIndex);
+        return string.IsNullOrEmpty(resolved) ? gamePath : resolved;
+    }
+
+    private string Remember(string gamePath, string upstream, string? modsKey)
+    {
+        _upstream[gamePath] = (upstream, modsKey);
+        return upstream;
     }
 
     // ---- thread pool ------------------------------------------------------------------------------
 
-    private async Task RunAsync(Run run, Guid collectionId, List<SurfaceJob> jobs, List<string> problems)
+    private async Task RunAsync(Run run, Guid collectionId, string? situation, List<SurfaceJob> jobs, IReadOnlyCollection<string> protect, List<string> problems)
     {
         var redirects = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var produced  = new List<string>();
@@ -221,7 +396,8 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
                 redirects[job.Mesh.DiffuseGamePath] = output;
             }
 
-            foreach (var deleted in BakeCache.Trim(_cacheDirectory, BakeCache.MaxFiles, produced))
+            // Housekeeping keeps what was just produced and every file an installed or remembered map still names.
+            foreach (var deleted in BakeCache.Trim(_cacheDirectory, BakeCache.MaxFiles, protect.Concat(produced).ToList()))
                 _log.Debug($"Decal cache: deleted {Path.GetFileName(deleted)}.");
         }
         catch (OperationCanceledException)
@@ -238,7 +414,7 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
 
         try
         {
-            await _framework.RunOnFrameworkThread(() => Complete(run, collectionId, redirects, problems));
+            await _framework.RunOnFrameworkThread(() => Complete(run, collectionId, situation, redirects, problems));
         }
         catch (Exception ex)
         {
@@ -424,8 +600,12 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
 
     // ---- framework thread (completion) ------------------------------------------------------------
 
-    /// <summary> Installs the redirects of a run that is still current and raises <see cref="Completed"/>; a superseded run is dropped silently. </summary>
-    private void Complete(Run run, Guid collectionId, Dictionary<string, string> redirects, List<string> problems)
+    /// <summary>
+    /// Installs the redirects of a run that is still current and raises <see cref="Completed"/>; a superseded run is dropped
+    /// silently. When <see cref="Prepare"/> took the temporary mod out this re-adds it; when the map equals the one installed
+    /// before, the game already loaded those files by path and the result says no redraw is needed.
+    /// </summary>
+    private void Complete(Run run, Guid collectionId, string? situation, Dictionary<string, string> redirects, List<string> problems)
     {
         try
         {
@@ -433,18 +613,35 @@ public sealed class DecalPublisher : IDecalPublisher, IDisposable
                 return;
 
             var published = 0;
+            var changed   = true;
             if (redirects.Count > 0)
             {
                 var code = _penumbra.AddTemporaryMod(DecalPaths.TemporaryModTag, collectionId, redirects, DecalPaths.TemporaryModPriority);
                 foreach (var (gamePath, file) in redirects)
                     _log.Information($"Decal redirect ({code}) in collection {collectionId}: {gamePath} -> {file}");
                 if (code == PenumbraApiEc.Success)
+                {
                     published = redirects.Count;
+                    changed   = _ledger.Install(collectionId, situation, redirects);
+                    if (!changed)
+                        _log.Debug("Decal redirects unchanged; the character already shows these bakes.");
+                    // Only a complete result is worth remembering: a map missing a surface would be re-installed as is.
+                    if (situation is not null && problems.Count == 0)
+                        _ledger.Remember(situation, redirects);
+                }
                 else
+                {
                     problems.Add($"Penumbra refused the decal mod: {code}");
+                    _ledger.Forget(collectionId);
+                }
+            }
+            else if (_ledger.InstalledSituation(collectionId) is null)
+            {
+                // Nothing produced, and Prepare took the previous mod out: the collection redirects nothing now.
+                _ledger.Forget(collectionId);
             }
 
-            Completed?.Invoke(new DecalPublishResult(problems.Count == 0 && published > 0, published, problems.AsReadOnly()));
+            Completed?.Invoke(new DecalPublishResult(problems.Count == 0 && published > 0, published, problems.AsReadOnly(), changed));
         }
         catch (Exception ex)
         {

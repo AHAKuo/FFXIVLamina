@@ -198,7 +198,19 @@ public interface ISkinMeshProvider
 
     /// <summary> Drops the cache (after a redraw, body change or mod change). </summary>
     void Invalidate();
+
+    /// <summary>
+    /// A cheap identity of the player's draw object as it is right now, without building meshes: the body race and, per
+    /// drawn model, its slot, file name, enabled shape / attribute masks and resource load state. Null while no player is
+    /// drawn (logged out, mid-redraw, loading screen). Login, zone change, gear swap, redraw and a mod change all change it.
+    /// </summary>
+    DrawObjectIdentity? DrawObjectState();
 }
+
+/// <summary> What the player's draw object renders right now, as <see cref="ISkinMeshProvider.DrawObjectState"/> reads it. </summary>
+/// <param name="Key"> Identity text of the drawn models; equal keys mean the same skin meshes and textures. </param>
+/// <param name="Loaded"> True when every drawn model's resource reports loaded, so the key names the outfit on screen rather than one still arriving. </param>
+public sealed record DrawObjectIdentity(string Key, bool Loaded);
 
 /// <summary> Mouse picking on the posed local player. Framework thread only. </summary>
 public interface IDecalPicker
@@ -211,20 +223,56 @@ public interface IDecalPicker
 /// <param name="Success"> Every decal was baked and the redirect is in place. </param>
 /// <param name="Published"> Number of surfaces redirected. </param>
 /// <param name="Problems"> Human readable problems (missing image, surface not drawn, conversion failed ...). </param>
-public sealed record DecalPublishResult(bool Success, int Published, IReadOnlyList<string> Problems);
+/// <param name="RedirectsChanged">
+/// True when the installed redirects (game path → bake file) differ from what the publisher last installed in the collection,
+/// including the first install and any install after a <see cref="IDecalPublisher.Clear"/>. False for an identical re-install:
+/// the game already loaded those files by path, so no redraw is needed for it.
+/// </param>
+public sealed record DecalPublishResult(bool Success, int Published, IReadOnlyList<string> Problems, bool RedirectsChanged = true);
+
+/// <summary> What <see cref="IDecalPublisher.CleanUp"/> removes. </summary>
+public enum DecalCleanupMode
+{
+    /// <summary> Leftovers only: remembered situations other than the installed one, bake files the installed map does not name, stale temporary files. </summary>
+    Unused,
+
+    /// <summary> Everything: the temporary mod, every remembered situation and upstream, every file in the cache folder. </summary>
+    Everything,
+}
+
+/// <summary> Outcome of <see cref="IDecalPublisher.CleanUp"/>. </summary>
+/// <param name="MapsForgotten"> Remembered situation → redirect maps dropped. </param>
+/// <param name="BakesDeleted"> Bake (.tex) files deleted from the cache folder. </param>
+/// <param name="TempFilesDeleted"> Temporary files of interrupted conversions deleted. </param>
+/// <param name="TemporaryModRemoved"> Lamina's decal temporary mod was removed from the collection. </param>
+/// <param name="Problems"> Human readable problems. </param>
+public sealed record DecalCleanupResult(int MapsForgotten, int BakesDeleted, int TempFilesDeleted, bool TemporaryModRemoved, IReadOnlyList<string> Problems);
 
 /// <summary>
 /// Bakes decals into the player's skin textures and redirects those textures in a Penumbra collection with one temporary mod.
 /// Work runs off the framework thread; <see cref="Completed"/> fires on the framework thread when the redirect is in place,
-/// which is when the caller should request a redraw.
+/// which is when the caller should request a redraw (when the result says the redirects changed).
 /// </summary>
 public interface IDecalPublisher
 {
-    /// <summary> Starts a publish. A run already in progress is superseded (its result is discarded). An empty list behaves like <see cref="Clear"/>. </summary>
-    void Publish(Guid collectionId, int objectIndex, IReadOnlyList<DecalSpec> decals);
+    /// <summary>
+    /// Starts a publish. A run already in progress is superseded (its result is discarded). An empty list behaves like
+    /// <see cref="Clear"/>. <paramref name="modsKey"/> identifies the mod state the caller put into the collection (null for
+    /// none); a change of it means the skin textures may resolve differently, while an unchanged one lets the publisher reuse
+    /// what it installed or remembered without baking. May complete synchronously (before returning) when nothing needs baking.
+    /// </summary>
+    void Publish(Guid collectionId, int objectIndex, IReadOnlyList<DecalSpec> decals, string? modsKey = null);
 
     /// <summary> Removes Lamina's decal temporary mod from the collection. Synchronous. </summary>
     void Clear(Guid collectionId);
+
+    /// <summary>
+    /// Deletes leftovers (<see cref="DecalCleanupMode.Unused"/>) or everything (<see cref="DecalCleanupMode.Everything"/>) the
+    /// publisher owns: remembered maps, cache files, the remembered upstream textures. A publish in flight is superseded first.
+    /// The temporary mod is removed from <paramref name="collectionId"/> when <paramref name="removeTemporaryMod"/> asks for it
+    /// or the mode is Everything; forgetting what is installed, so the next publish installs anew. Synchronous.
+    /// </summary>
+    DecalCleanupResult CleanUp(Guid? collectionId, DecalCleanupMode mode, bool removeTemporaryMod);
 
     /// <summary> True while a publish is running. </summary>
     bool Busy { get; }

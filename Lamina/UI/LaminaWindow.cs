@@ -40,8 +40,8 @@ public sealed partial class LaminaWindow : Window, IDisposable
         _caches     = new UiCaches(services);
         _conditions = new ConditionEditor(services, _caches);
         _placement  = new DecalPlacementMode(services);
-        _layers     = new LayerEditor(services, _caches, _placement, _fileDialogs,
-            new DecalImageStore(DecalPaths.ImageDirectory(services.PluginInterface.GetPluginConfigDirectory())));
+        _images     = new DecalImageStore(DecalPaths.ImageDirectory(services.PluginInterface.GetPluginConfigDirectory()));
+        _layers     = new LayerEditor(services, _caches, _placement, _fileDialogs, _images);
         _preview    = new PreviewPanel(services, _caches);
         DebugOverlay = new DebugOverlayWindow(services) { IsOpen = services.Profiles.Config.DebugOverlay };
 

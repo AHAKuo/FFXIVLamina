@@ -31,6 +31,12 @@ public sealed unsafe class SkinMeshProvider : ISkinMeshProvider
 
     private const int GeometryCacheSize = 32;
 
+    /// <summary>
+    /// <c>ResourceHandle.LoadState</c> of a resource whose data has arrived. FFXIVClientStructs keeps the field as a raw byte;
+    /// its documentation (DrawObject bounds remarks) names 7 as "loaded", and lower values are the stages before it.
+    /// </summary>
+    private const byte ResourceLoaded = 7;
+
     private static readonly IReadOnlyList<SkinMesh>   Empty     = Array.Empty<SkinMesh>();
     private static readonly IReadOnlyList<LiveSource> NoSources = Array.Empty<LiveSource>();
 
@@ -99,6 +105,26 @@ public sealed unsafe class SkinMeshProvider : ISkinMeshProvider
         {
             WarnOnce("get", ex, "Lamina: building the skin meshes failed.");
             return _meshes ?? Empty;
+        }
+    }
+
+    /// <inheritdoc/>
+    public DrawObjectIdentity? DrawObjectState()
+    {
+        try
+        {
+            var character = LivePlayer.Character(_objects);
+            if (character == null)
+                return null;
+
+            var models = LoadedModels(character);
+            var loaded = models.Count > 0 && models.All(m => m.LoadState == ResourceLoaded);
+            return new DrawObjectIdentity(CacheKey(LivePlayer.Race(character), models), loaded);
+        }
+        catch (Exception ex)
+        {
+            WarnOnce("state", ex, "Lamina: reading the player's draw object failed.");
+            return null;
         }
     }
 

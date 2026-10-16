@@ -24,6 +24,8 @@ public sealed class EngineRig
     public int? PlayerIndex { get; set; } = 0;
     public nint PlayerAddress { get; set; } = 0x1000;
     public DateTime Now { get; set; } = new(2026, 10, 15, 12, 0, 0, DateTimeKind.Utc);
+    /// <summary> Identity of the player's draw object the applier records with an immediate decal publish. </summary>
+    public string? DrawKey { get; set; } = "outfit-a";
     public List<string> Log { get; } = new();
 
     public RedrawScheduler Redraw { get; }
@@ -42,7 +44,7 @@ public sealed class EngineRig
 
         Redraw  = new RedrawScheduler(Penumbra, () => PlayerIndex, Log.Add);
         Applier = new Applier(Glamourer, Penumbra, Honorific, Moodles, Decals, Store, Redraw, () => Config, () => Collection, () => Status,
-            () => PlayerIndex, () => PlayerAddress, () => Now, Log.Add);
+            () => PlayerIndex, () => PlayerAddress, () => Now, Log.Add, () => DrawKey);
         Cleanup = new CleanupService(Glamourer, Penumbra, Honorific, Moodles, Decals, Store, Redraw, Evaluator, () => Config, () => Collection,
             () => PlayerIndex, () => PlayerAddress, () => Now, Log.Add);
 

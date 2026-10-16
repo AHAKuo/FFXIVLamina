@@ -70,9 +70,21 @@ public class DecalApplyTests
         Assert.True(store.DecalsApplied);
         Assert.True(store.AnythingApplied);
 
+        store.PendingDecals = new[] { Designs.Of(d => Designs.Decal(d)).Decals[0].Value };
+        store.DecalsDrawKey = "outfit";
         store.Reset(keepGlamourer: true);
         Assert.Null(store.DecalsHash);
+        Assert.Null(store.PendingDecals);
+        Assert.Null(store.DecalsDrawKey);
         Assert.False(store.AnythingApplied);
+
+        store.DecalsHash    = "abc";
+        store.PendingDecals = Array.Empty<DecalSpec>();
+        store.DecalsDrawKey = "outfit";
+        store.ForgetDecals();
+        Assert.Null(store.DecalsHash);
+        Assert.Null(store.PendingDecals);
+        Assert.Null(store.DecalsDrawKey);
     }
 
     // ---- applier -----------------------------------------------------------------------------------
@@ -97,11 +109,81 @@ public class DecalApplyTests
         Assert.Empty(rig.Decals.Clears);
 
         Assert.True(info.DecalsPublished);
+        Assert.False(info.DecalsDeferred);
         Assert.False(info.RedrawRequested);
         Assert.Empty(info.Problems);
+        Assert.Null(publish.ModsKey);
         Assert.Equal(DesignDiffer.DecalsHash(design), rig.Store.DecalsHash);
+        Assert.Equal("outfit-a", rig.Store.DecalsDrawKey);
+        Assert.Null(rig.Store.PendingDecals);
         Assert.Equal(design.ContentHash, rig.Store.DesignHash);
         Assert.True(Diff(rig, design).NoChange);
+    }
+
+    [Fact]
+    public void ModsAndDecals_DeferThePublish_UntilAfterTheRedraw()
+    {
+        // The publisher would snapshot the outfit still on screen; the redraw for the mods replaces it first.
+        var rig = new EngineRig();
+        rig.Penumbra.AddMod("Skin");
+        var design = Designs.Of(d =>
+        {
+            Designs.Mod(d, "Skin");
+            Designs.Decal(d);
+        });
+
+        var info = rig.Applier.Apply(design, Diff(rig, design), Designs.Safe());
+
+        Assert.Empty(rig.Decals!.Publishes);
+        Assert.True(info.DecalsDeferred);
+        Assert.False(info.DecalsPublished);
+        Assert.True(info.RedrawRequested);
+        Assert.True(rig.Redraw.Pending);
+        Assert.Empty(info.Problems);
+        Assert.NotNull(rig.Store.PendingDecals);
+        Assert.Same(design.Decals[0].Value, Assert.Single(rig.Store.PendingDecals));
+        Assert.Equal(DesignDiffer.DecalsHash(design), rig.Store.DecalsHash);
+        Assert.True(rig.Store.DecalsApplied);
+        Assert.Null(rig.Store.DecalsDrawKey);
+        Assert.True(Diff(rig, design).NoChange);
+        Assert.Contains(rig.Log, m => m.Contains("Decals deferred"));
+    }
+
+    [Fact]
+    public void RedrawAlreadyPending_DefersEvenADecalOnlyChange()
+    {
+        var rig = new EngineRig();
+        rig.Redraw.Request();
+        var design = Designs.Of(d => Designs.Decal(d));
+
+        var info = rig.Applier.Apply(design, Diff(rig, design), Designs.Safe());
+
+        Assert.Empty(rig.Decals!.Publishes);
+        Assert.True(info.DecalsDeferred);
+        Assert.NotNull(rig.Store.PendingDecals);
+    }
+
+    [Fact]
+    public void ImmediatePublish_PassesTheModsKey_AndClearsAnyPending()
+    {
+        // The mods are already in the collection (same hash), so only the decal change is applied: published now, with the mods key.
+        var rig = new EngineRig();
+        rig.Penumbra.AddMod("Skin");
+        var design = Designs.Of(d =>
+        {
+            Designs.Mod(d, "Skin");
+            Designs.Decal(d);
+        });
+        rig.Store.ModsHash      = DesignDiffer.ModsHash(design);
+        rig.Store.PendingDecals = Array.Empty<DecalSpec>();
+
+        var delta = Diff(rig, design);
+        Assert.False(delta.ModsChanged);
+        var info = rig.Applier.Apply(design, delta, Designs.Safe());
+
+        Assert.True(info.DecalsPublished);
+        Assert.Equal(DesignDiffer.ModsHash(design), Assert.Single(rig.Decals!.Publishes).ModsKey);
+        Assert.Null(rig.Store.PendingDecals);
     }
 
     [Fact]
@@ -187,7 +269,11 @@ public class DecalApplyTests
             Designs.Mod(d, "Skin");
             Designs.Decal(d);
         });
-        rig.Applier.Apply(first, Diff(rig, first), Designs.Safe());
+        Assert.True(rig.Applier.Apply(first, Diff(rig, first), Designs.Safe()).DecalsDeferred);
+        // The redraw went out and the follow-up published the pending decals.
+        rig.Redraw.Cancel();
+        rig.Store.PendingDecals = null;
+        rig.Store.DecalsDrawKey = "outfit-a";
 
         var second = Designs.Of(d =>
         {
@@ -200,9 +286,13 @@ public class DecalApplyTests
 
         var info = rig.Applier.Apply(second, delta, Designs.Safe());
 
-        Assert.Equal(2, rig.Decals!.Publishes.Count);
-        Assert.True(info.DecalsPublished);
+        // Republished (the other mod may change the skin texture), but only after the mods redraw: the decals wait in the store.
+        Assert.Empty(rig.Decals!.Publishes);
+        Assert.False(info.DecalsPublished);
+        Assert.True(info.DecalsDeferred);
         Assert.True(info.RedrawRequested);
+        Assert.NotNull(rig.Store.PendingDecals);
+        Assert.Equal(DesignDiffer.ModsHash(second), rig.Store.ModsHash);
     }
 
     [Fact]
@@ -308,7 +398,10 @@ public class DecalApplyTests
 
         Assert.True(step.ProfileSwitched);
         Assert.Equal(new[] { rig.Collection }, rig.Decals!.Clears);
-        Assert.Equal(new[] { "a.png", "b.png" }, rig.Decals.Publishes.Select(p => p.Decals[0].ImageFile));
+        // The switch cleanup asked for a redraw, so B's decals wait for it instead of being baked onto the outgoing outfit.
+        Assert.Equal(new[] { "a.png" }, rig.Decals.Publishes.Select(p => p.Decals[0].ImageFile));
+        Assert.True(step.Apply!.DecalsDeferred);
+        Assert.Equal("b.png", Assert.Single(rig.Store.PendingDecals!).ImageFile);
         Assert.True(rig.Store.DecalsApplied);
     }
 }

@@ -18,6 +18,7 @@ public enum CollectionStatus
 
 /// <summary> Outcome of the last apply, for the Settings / debug overlay. </summary>
 /// <param name="DecalsPublished"> A decal publish was started (its bake and redirect complete asynchronously). </param>
+/// <param name="DecalsDeferred"> The decals wait in the store until the redraw this apply asked for has loaded the new outfit. </param>
 public sealed record ApplyInfo(
     DateTime AtUtc,
     string DesignHash,
@@ -27,6 +28,7 @@ public sealed record ApplyInfo(
     bool HonorificApplied,
     bool MoodlesApplied,
     bool DecalsPublished,
+    bool DecalsDeferred,
     bool RedrawRequested,
     bool RedrawDeferred,
     IReadOnlyList<string> Problems);
@@ -57,6 +59,12 @@ public interface ILaminaEngine
 
     /// <summary> Redraw the local player now through the scheduler (clears any pending deferred redraw). Returns false when Penumbra or the player is unavailable. </summary>
     bool RedrawNow();
+
+    /// <summary> True while Lamina has decals published or waiting to be published. </summary>
+    bool DecalsApplied { get; }
+
+    /// <summary> Forgets the decal bookkeeping (published, pending) so the next evaluation publishes anew; optionally asks for a redraw first. </summary>
+    void ForgetDecals(bool redraw);
 
     /// <summary> Preview for the UI: what the profile would produce right now, optionally focused on a group or pass. </summary>
     PreviewResult Preview(Profile profile, Guid? focusGroupId, Guid? focusPassId);

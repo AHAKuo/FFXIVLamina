@@ -38,6 +38,8 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     private readonly IMoodlesBridge _moodles;
     private readonly IVitrineBridge _vitrine;
     private readonly IDecalPublisher? _decals;
+    private readonly ISkinMeshProvider? _meshes;
+    private readonly DecalFollowUp? _followUp;
     private readonly IFramework _framework;
     private readonly IObjectTable _objects;
     private readonly IClientState _clientState;
@@ -72,13 +74,14 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
     /// <summary>
     /// Creates the engine and subscribes to every source of change. <paramref name="decalPublisher"/> is null when the decal
-    /// feature could not start; decal layers are then reported as a problem instead of applied.
+    /// feature could not start; decal layers are then reported as a problem instead of applied. <paramref name="skinMeshes"/>
+    /// supplies the draw object identity the decal follow-up watches.
     /// </summary>
     public LaminaEngine(ProfileStore profiles, StateTracker tracker, ConditionEvaluator evaluator, PassCompositor compositor,
         LayerResolver resolver, GlamourerDesignCache cache, IGlamourerBridge glamourer, IPenumbraBridge penumbra,
         IHonorificBridge honorific, IMoodlesBridge moodles, IVitrineBridge vitrine, IFramework framework, IObjectTable objects,
         IClientState clientState, ICondition condition, GameCatalog catalog, IPluginLog log, TickClock? clock = null,
-        IDecalPublisher? decalPublisher = null)
+        IDecalPublisher? decalPublisher = null, ISkinMeshProvider? skinMeshes = null)
     {
         _profiles    = profiles;
         _tracker     = tracker;
@@ -92,6 +95,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _moodles     = moodles;
         _vitrine     = vitrine;
         _decals      = decalPublisher;
+        _meshes      = skinMeshes;
         _framework   = framework;
         _objects     = objects;
         _clientState = clientState;
@@ -102,10 +106,12 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
         _redraw  = new RedrawScheduler(_penumbra, LocalPlayerIndex, m => _log.Debug(m));
         _applier = new Applier(_glamourer, _penumbra, _honorific, _moodles, _decals, _store, _redraw, () => _profiles.Config, () => CollectionId,
-            () => _collectionStatus, LocalPlayerIndex, LocalPlayerAddress, _clock.Read, m => _log.Debug(m));
+            () => _collectionStatus, LocalPlayerIndex, LocalPlayerAddress, _clock.Read, m => _log.Debug(m), DrawObjectKey);
         _cleanup = new CleanupService(_glamourer, _penumbra, _honorific, _moodles, _decals, _store, _redraw, _evaluator, () => _profiles.Config,
             () => CollectionId, LocalPlayerIndex, LocalPlayerAddress, _clock.Read, m => _log.Information(m));
         _core = new EngineCore(_compositor, _resolver, _evaluator, _applier, _cleanup, _store, () => _profiles.Config);
+        if (_decals is not null)
+            _followUp = new DecalFollowUp(_store, _clock.Read, DrawObject, DecalsReady, () => _decals.Busy, PublishDecals, m => _log.Debug(m));
 
         _lastHoldState = _profiles.Config.HoldGlamourerState;
 
@@ -125,6 +131,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _framework.Update              += OnFrameworkUpdate;
         if (_decals is not null)
             _decals.Completed += OnDecalPublishCompleted;
+        _penumbra.GameObjectRedrawn    += OnGameObjectRedrawn;
 
         // Dalamud constructs plugins off the main thread and the object table refuses off-thread access,
         // so the first collection check runs on the first framework tick instead of here.
@@ -242,6 +249,21 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     }
 
     /// <inheritdoc/>
+    public bool DecalsApplied
+        => _store.DecalsApplied;
+
+    /// <inheritdoc/>
+    public void ForgetDecals(bool redraw)
+    {
+        _store.ForgetDecals();
+        _store.DesignHash = null;
+        _followUp?.Reset();
+        if (redraw)
+            _redraw.Request();
+        _dirty = true;
+    }
+
+    /// <inheritdoc/>
     public PreviewResult Preview(Profile profile, Guid? focusGroupId, Guid? focusPassId)
         => _compositor.Preview(profile, _tracker.Current, _evaluator, _profiles.Config.Direction, _resolver, focusGroupId, focusPassId);
 
@@ -278,7 +300,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         if (LastApply is { } apply)
         {
             sb.Append("Last apply: ").Append(apply.AtUtc.ToLocalTime().ToString("HH:mm:ss")).Append(" · glamourer ").Append(apply.GlamourerApplied)
-              .Append(" · mods ").Append(apply.ModsWritten).Append(" · decals ").Append(apply.DecalsPublished ? "published" : "none")
+              .Append(" · mods ").Append(apply.ModsWritten).Append(" · decals ").Append(apply.DecalsPublished ? "published" : apply.DecalsDeferred ? "pending redraw" : "none")
               .Append(" · redraw ").Append(apply.RedrawRequested ? (apply.RedrawDeferred ? "deferred" : "yes") : "no");
             if (apply.Problems.Count > 0)
                 sb.Append(" · problems: ").Append(string.Join("; ", apply.Problems));
@@ -369,6 +391,9 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
                 _log.Information("Redraw sent to Penumbra.");
             else if (_redraw.Pending && _tracker.Current.RedrawUnsafe)
                 _log.Debug("Redraw deferred: unsafe right now.");
+
+            // Decals wait for the redrawn character to load, then publish against what is drawn.
+            _followUp?.Tick();
         }
         catch (Exception ex)
         {
@@ -401,6 +426,9 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
             if (_cache.RefreshNames())
                 _dirty = true;
         }
+
+        // Draw object changes the game makes on its own (login, zone change, gear swap) raise no Penumbra event.
+        _followUp?.Poll();
     }
 
     private void CheckHoldStateFlip()
@@ -516,7 +544,8 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
             _store.ModsHash    = null;
             _store.ModsWritten = 0;
-            _store.DecalsHash  = null;
+            _store.ForgetDecals();
+            _followUp?.Reset();
             _log.Information("The Lamina collection is no longer assigned to your character; mods are skipped until it is assigned again in Penumbra.");
         }
         else if (_collectionStatus == CollectionStatus.Assigned)
@@ -560,7 +589,8 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         {
             _store.ModsHash    = null;
             _store.ModsWritten = 0;
-            _store.DecalsHash  = null;
+            _store.ForgetDecals();
+            _followUp?.Reset();
             _redraw.Cancel();
         }
 
@@ -618,12 +648,18 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         foreach (var problem in result.Problems)
             _log.Warning($"Decal publish: {problem}");
 
-        // The character picks the baked textures up on redraw; every redirected surface wants one.
-        if (result.Success || result.Published > 0)
+        // The character picks the baked textures up on redraw, but only when the redirects differ from what it already
+        // loaded (an identical re-install after a mods redraw needs none, which spares the second load).
+        var redraw = _followUp?.OnPublishCompleted(result) ?? DecalFollowUp.RedrawWanted(result, false);
+        if (redraw)
         {
             _redraw.Request();
             _log.Information($"Decal publish completed: {result.Published} surface(s) redirected; redraw requested "
                            + $"(policy {_profiles.Config.RedrawPolicy}, unsafe now: {_tracker.Current.RedrawUnsafe}).");
+        }
+        else if (result.Published > 0)
+        {
+            _log.Information($"Decal publish completed: {result.Published} surface(s) redirected, unchanged; no redraw needed.");
         }
 
         if (result.Success)
@@ -634,9 +670,19 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
         // Forget the decal section so the next evaluation, whenever something else triggers it, publishes again. Nothing is
         // triggered here: a persistent failure must not loop, and the apply backoff spaces the retries out.
-        _store.DecalsHash = null;
+        _store.ForgetDecals();
         _store.DesignHash = null;
         _retryDue         = _clock.Now + ApplyRetryBackoff;
+    }
+
+    private void OnGameObjectRedrawn(nint address, int objectIndex)
+    {
+        if (_disposed || _followUp is null)
+            return;
+
+        // Penumbra raises this on the framework thread for every object it redraws (ours or another plugin's).
+        if (LocalPlayerIndex() is { } index && objectIndex == index)
+            _followUp.Notice("the player was redrawn");
     }
 
     private void OnLogin()
@@ -659,6 +705,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
         _core.ForgetProfile();
         _redraw.Cancel();
+        _followUp?.Reset();
         LastDesign = null;
         LastReport = null;
     }
@@ -676,6 +723,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         }
 
         _core.ForgetProfile();
+        _followUp?.Reset();
         LastDesign = null;
         LastReport = null;
     }
@@ -688,6 +736,22 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
     private nint LocalPlayerAddress()
         => _framework.IsInFrameworkUpdateThread ? _objects.LocalPlayer?.Address ?? 0 : 0;
+
+    private DrawObjectIdentity? DrawObject()
+        => _framework.IsInFrameworkUpdateThread ? _meshes?.DrawObjectState() : null;
+
+    private string? DrawObjectKey()
+        => DrawObject()?.Key;
+
+    /// <summary> A decal publish can go out: Lamina on, Penumbra there, the collection assigned, a player to draw. </summary>
+    private bool DecalsReady()
+        => Enabled && _penumbra.Available && _collectionStatus == CollectionStatus.Assigned && CollectionId is not null && LocalPlayerIndex() is not null;
+
+    private void PublishDecals(IReadOnlyList<DecalSpec> decals)
+    {
+        if (_decals is not null && CollectionId is { } collection && LocalPlayerIndex() is { } index)
+            _decals.Publish(collection, index, decals, _store.ModsHash);
+    }
 
     private static string Flag(string name, bool on)
         => on ? name : $"{name} (missing)";
@@ -715,6 +779,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _condition.ConditionChange     -= OnConditionChange;
         if (_decals is not null)
             _decals.Completed -= OnDecalPublishCompleted;
+        _penumbra.GameObjectRedrawn    -= OnGameObjectRedrawn;
 
         try
         {

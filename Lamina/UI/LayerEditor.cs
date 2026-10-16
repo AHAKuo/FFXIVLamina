@@ -203,10 +203,28 @@ internal sealed class LayerEditor
         if (duplicate is { } d && _s.Profiles.DuplicateLayer(profile, pass, d) is not null)
             changed = true;
         if (remove is { } r && _s.Profiles.RemoveLayer(profile, pass, r))
+        {
             changed = true;
+            PruneImages();
+        }
         if (transfer is { } x && ApplyTransfer(profile, pass, x))
             changed = true;
         return changed;
+    }
+
+    /// <summary> Deletes imported images no decal layer references any more (after an image change or a layer removal). </summary>
+    private void PruneImages()
+    {
+        try
+        {
+            var pruned = _images.Prune(DecalImageStore.ReferencedImages(_s.Profiles.Profiles));
+            if (pruned.Count > 0)
+                _s.Log.Information($"Decal images: removed {pruned.Count} unreferenced image(s).");
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Warning(ex, "UI: pruning decal images failed.");
+        }
     }
 
     private static string DisplayName(string kind)
@@ -1685,6 +1703,7 @@ internal sealed class LayerEditor
                 _decalErrors.Remove(d.Id);
                 _s.Profiles.MarkDirty(profile);
                 _s.Engine.Invalidate();
+                PruneImages();
             }
             catch (Exception ex)
             {

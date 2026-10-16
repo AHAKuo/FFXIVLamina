@@ -10,7 +10,8 @@ namespace Lamina.Runtime.Engine;
 /// <summary>
 /// Pushes a design's delta to every integration in one batch and in one frame (TDD 7.1 #6, 5.8):
 /// Penumbra (clean slate, then the full mod state) → Glamourer (locked state) → Honorific → Moodles → decals (handed to the
-/// publisher, which bakes asynchronously and completes with its own redraw request) → redraw request.
+/// publisher, which bakes asynchronously and completes with its own redraw request, or parked in the store until the mods
+/// redraw has loaded the outfit they go on) → redraw request.
 /// Never throws; every outcome lands in the returned <see cref="ApplyInfo"/>. The design hash is recorded only when every
 /// attempted section succeeded, so a transient failure (actor not ready, collection missing) is retried on the next evaluation.
 /// </summary>
@@ -30,6 +31,7 @@ public sealed class Applier
     private readonly Func<nint> _localPlayerAddress;
     private readonly Func<DateTime> _clock;
     private readonly Action<string>? _log;
+    private readonly Func<string?>? _drawObjectKey;
 
     /// <param name="glamourer"> Glamourer bridge. </param>
     /// <param name="penumbra"> Penumbra bridge. </param>
@@ -45,10 +47,11 @@ public sealed class Applier
     /// <param name="localPlayerAddress"> Actor address of the local player (0 when none), for Moodles. </param>
     /// <param name="clock"> UTC clock. </param>
     /// <param name="log"> Optional debug logger. </param>
+    /// <param name="drawObjectKey"> Identity of the player's draw object right now (<see cref="ISkinMeshProvider.DrawObjectState"/>), recorded with an immediate decal publish. </param>
     public Applier(IGlamourerBridge glamourer, IPenumbraBridge penumbra, IHonorificBridge honorific, IMoodlesBridge moodles,
         IDecalPublisher? decals, AppliedStateStore store, RedrawScheduler redraw, Func<LaminaConfig> config, Func<Guid?> collectionId,
         Func<CollectionStatus> collectionStatus, Func<int?> localPlayerIndex, Func<nint> localPlayerAddress,
-        Func<DateTime>? clock = null, Action<string>? log = null)
+        Func<DateTime>? clock = null, Action<string>? log = null, Func<string?>? drawObjectKey = null)
     {
         _glamourer          = glamourer;
         _penumbra           = penumbra;
@@ -64,6 +67,7 @@ public sealed class Applier
         _localPlayerAddress = localPlayerAddress;
         _clock              = clock ?? (() => DateTime.UtcNow);
         _log                = log;
+        _drawObjectKey      = drawObjectKey;
     }
 
     /// <summary> Applies the delta. A <see cref="DesignDelta.NoChange"/> delta only refreshes the store's hash. </summary>
@@ -76,14 +80,14 @@ public sealed class Applier
         {
             _store.DesignHash = design.ContentHash;
             _store.LastDesign = design;
-            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, false, problems);
+            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, false, false, problems);
         }
 
         if (_localPlayerIndex() is not { } index)
         {
             problems.Add("no local player");
             _store.DesignHash = null;
-            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, false, problems);
+            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, false, false, problems);
         }
 
         // True until a section that was attempted failed in a way worth retrying.
@@ -296,8 +300,13 @@ public sealed class Applier
 
         // (e) Decals: the publisher bakes them into the skin textures and redirects those in the collection, asynchronously; the
         // engine requests the redraw when it completes and forgets the hash again if it fails. Mod changes republish too, since
-        // the bake contains the upstream skin texture a body mod may have just changed.
+        // the bake contains the upstream skin texture a body mod may have just changed. When this apply (or an earlier one)
+        // asked for a redraw, the outfit on screen is not the one the decals go on: the publisher would snapshot the old skin
+        // meshes and resolve the old texture. The decals then wait in the store and DecalFollowUp publishes them once the
+        // redrawn character has loaded. Under RedrawPolicy.Never that redraw never goes out by itself, so the decals stay
+        // pending until a manual redraw or a draw object change (login, zone change, gear swap) hands them to the follow-up.
         var decalsPublished = false;
+        var decalsDeferred  = false;
         if (delta.DecalsChanged || (delta.ModsChanged && design.HasDecals))
         {
             if (_decals is null)
@@ -305,7 +314,7 @@ public sealed class Applier
                 // Not transient: the feature could not start. Reported, not retried.
                 if (design.HasDecals)
                     problems.Add("decals unavailable");
-                _store.DecalsHash = null;
+                _store.ForgetDecals();
             }
             else
             {
@@ -314,21 +323,33 @@ public sealed class Applier
                 {
                     if (design.HasDecals)
                     {
-                        _decals.Publish(collection, index, design.Decals.Select(f => f.Value).ToList());
+                        var specs = design.Decals.Select(f => f.Value).ToList();
                         _store.DecalsHash = DesignDiffer.DecalsHash(design);
-                        decalsPublished   = true;
+                        if (redrawWanted || _redraw.Pending)
+                        {
+                            _store.PendingDecals = specs;
+                            decalsDeferred       = true;
+                            _log?.Invoke("Decals deferred until the redraw has loaded the new outfit.");
+                        }
+                        else
+                        {
+                            _store.PendingDecals = null;
+                            _decals.Publish(collection, index, specs, _store.ModsHash);
+                            _store.DecalsDrawKey = _drawObjectKey?.Invoke();
+                            decalsPublished      = true;
+                        }
                     }
                     else if (_store.DecalsApplied)
                     {
                         _decals.Clear(collection);
-                        _store.DecalsHash = null;
-                        redrawWanted      = true;
+                        _store.ForgetDecals();
+                        redrawWanted = true;
                     }
                 }
                 else
                 {
                     _log?.Invoke($"Decals skipped: collection status {status}.");
-                    _store.DecalsHash = null;
+                    _store.ForgetDecals();
                 }
             }
         }
@@ -347,7 +368,7 @@ public sealed class Applier
 
         var deferred = redrawRequested && _redraw.Pending && (snapshot.RedrawUnsafe || _config().RedrawPolicy == RedrawPolicy.Never);
         return new ApplyInfo(now, design.ContentHash, glamourerApplied, modsApplied, modsWritten, honorificApplied, moodlesApplied,
-            decalsPublished, redrawRequested, deferred, problems);
+            decalsPublished, decalsDeferred, redrawRequested, deferred, problems);
     }
 
     /// <summary> Unlocks and reverts the actor's Glamourer state to the configured fallback (TDD: fall back to the game state when no rule applies). </summary>
