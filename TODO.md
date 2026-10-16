@@ -72,6 +72,28 @@ Lamina only uses Vitrine for the Vitrine Design layer (design id → mod states)
 - [x] Vitrine's preview writes go to Penumbra per-player temporary settings with Vitrine's own key.
 - [x] Register the new plugin in `ahadevtools` and release both (Vitrine v0.1.0, 2026-10-15). Vitrine's own work is tracked in `../vitrine/TODO.md`.
 
+## J) 2026-10-16 batch (five features, unverified in game; on branch `wip/integration`)
+- [x] **Collapsible layer cards**: arrow / click on the header folds a card; `Layer.Collapsed` is saved; collapse-all / expand-all
+      icons on the Add Layer line. Collapsing never invalidates the engine.
+- [x] **Layer duplicate / copy / paste / move**: per-card Duplicate (inserted below), Copy (`LAMINALAYER1:` clipboard string, also
+      kept in memory), Paste layer (next to Add Layer), Move / copy to another pass popup (profile → group → pass).
+      `ProfileStore.DuplicateLayer / CopyLayerTo / MoveLayerTo`, `ProfileTransfer.ImportLayer`. The Profiles-tab importer rejects a
+      layer string with a message pointing at Paste layer.
+- [x] **Vitrine hair / face / tail as appearance** (Vitrine IPC 1.4 `customizations`, Vitrine repo change UNCOMMITTED in
+      `../vitrine`, needs a Vitrine release): the Vitrine Design layer sets Hairstyle / Face / TailShape for the player's clan +
+      gender; `VitrineDesignLayer.ApplyCustomizations` (default on) toggles it; masks apply.
+- [x] **Save as Glamourer design**: pass and group editors get "Save as Glamourer design…" (name, include mod associations);
+      `GlamourerDesignWriter` writes the FileVersion 3 layout, `IGlamourerBridge.AddDesign`. Mods with inherited (null) enable
+      state are left out and reported. Honorific / Moodles / decals are not part of a Glamourer design.
+- [x] **Fallback to the game state when no rule applies**: `LaminaConfig.NoRuleFallback` (GameState default, Automation). An
+      empty design reverts with Glamourer `RevertState` (game) instead of automation; when a new design drops fields the previous
+      one set, the Applier reverts first and then applies the new state in the same frame so dropped fields fall back; cleanup
+      paths use the same setting. Settings → "When no rule sets a field".
+- [ ] Verify in game: Glamourer accepts the written design JSON (`AddDesign`) and honours its mod settings; revert-then-apply in
+      one frame does not flicker the kept fields (if it does: apply the dropped fields with the baseline's values instead);
+      the hair value from a Vitrine hair mod shows after both plugins are rebuilt; the layer header fits at the default window
+      size; ImGui clipboard paste works.
+
 ## E) Vitrine designs that also equip (Apply Action)
 Vitrine is adding an **Apply Action** to each design (baseline and variants): which equipment slots the design applies
 to and which exact affected piece goes in each slot. Lamina should honour it.
@@ -139,6 +161,23 @@ overlay (`Lamina/UI`). 411 unit tests.
 - Bake / convert / redirect / redraw loop, cache hits, temp mod removal on layer removal, profile switch and unload.
 
 ### Known issues (fix later)
+- [x] **Decals can break when a virtual design is first applied** — fixed 2026-10-16 (unverified in game): decals are no longer
+      published in the same frame as a mods redraw. The apply marks them pending; `DecalFollowUp` publishes after the player's
+      draw object was rebuilt (Penumbra `GameObjectRedrawn`, or the 1 s draw-object poll that also catches zone changes / login /
+      gear swaps) and every model reports LoadState 7 (5 s timeout). A publish first computes a situation key (mods hash +
+      draw-object key + decal specs + image stamps): equal to the installed one → nothing; known from the 16-entry `RedirectLedger`
+      → the remembered redirect map is re-added without baking; otherwise the slow path (bake cache by content key). The second
+      redraw is only requested when the redirect map actually changed.
+- [ ] Verify in game: first apply of a decal design shows the decal without `/lam reapply`; rule change with the same skin causes
+      one redraw only; a rule set that leaves and returns reuses its map; zone change keeps the decal; the LoadState 7 check is
+      sufficient (slots that populate late would be missed; the two-tick stability check and the 5 s timeout are the fallbacks).
+- [ ] Residual edge: a game-driven reload inside the 1–2 s window in which `Prepare` has the temp mod out of the collection can
+      leave the character without decals until the next trigger.
+- [x] Settings → Decals: "Clean up decal leftovers" (forget non-installed situations, delete unreferenced bakes / temp files,
+      prune unreferenced images, remove a stray temp mod when nothing is applied) and "Clear all decal data" (unconditional:
+      temp mod, whole cache, every image; layers keep their image name and show it as missing). Decal images are now stored by
+      content hash (re-picking the same file reuses it) and pruned on start, after a pick and after a layer removal.
+- [ ] Old known issue text kept for reference:
 - [ ] **Decals can break when a virtual design is first applied**; `/lam reapply` once the draw has finished fixes them.
       Likely cause: the apply publishes mods and decals in the same frame, so the publisher snapshots the skin meshes and
       textures of the outfit still on screen, bakes against those, and the redraw that follows loads the new outfit with a
