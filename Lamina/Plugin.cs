@@ -3,6 +3,9 @@ using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Lamina.Decals;
+using Lamina.Decals.Mesh;
+using Lamina.Decals.Publish;
 using Lamina.Ipc;
 using Lamina.Persistence;
 using Lamina.Runtime.Compose;
@@ -90,8 +93,35 @@ public sealed class Plugin : IDalamudPlugin
         var resolver   = new LayerResolver(cache, () => vitrine, () => profiles.Config.ApplyGlamourerModAssociations, m => Log.Debug(m));
         var compositor = new PassCompositor();
 
+        // Decals: live skin meshes + picking + the baking publisher. A failure here disables the layer kind, nothing else.
+        SkinMeshProvider? skinMeshes = null;
+        DecalPicker?      picker     = null;
+        DecalPublisher?   decals     = null;
+        try
+        {
+            var configDir = PluginInterface.GetPluginConfigDirectory();
+            var deformer = new RacialDeformer(penumbra, DataManager, Log);
+            skinMeshes = new SkinMeshProvider(penumbra, DataManager, ObjectTable, deformer, Log);
+            picker     = new DecalPicker(skinMeshes, ObjectTable, GameGui, deformer, Log);
+            decals     = Track(new DecalPublisher(penumbra, skinMeshes, TextureProvider, TextureReadback, Framework, Log,
+                DecalPaths.ImageDirectory(configDir), DecalPaths.CacheDirectory(configDir)));
+            var meshes = skinMeshes;
+            penumbra.GameObjectRedrawn += (_, index) =>
+            {
+                if (index == 0)
+                    meshes.Invalidate();
+            };
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Decal feature could not start; decal layers are disabled.");
+            skinMeshes = null;
+            picker     = null;
+            decals     = null;
+        }
+
         var engine = Track(new LaminaEngine(profiles, tracker, evaluator, compositor, resolver, cache, glamourer, penumbra, honorific, moodles,
-            vitrine, Framework, ObjectTable, ClientState, Condition, catalog, Log, clock));
+            vitrine, Framework, ObjectTable, ClientState, Condition, catalog, Log, clock, decals));
         _engine = engine;
         _ipc    = new LaminaIpc(PluginInterface, Framework, engine, Log);
 
@@ -120,6 +150,9 @@ public sealed class Plugin : IDalamudPlugin
             Honorific       = honorific,
             Moodles         = moodles,
             Vitrine         = vitrine,
+            DecalPicker     = picker,
+            SkinMeshes      = skinMeshes,
+            DecalPublisher  = decals,
             Version         = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0",
         };
 

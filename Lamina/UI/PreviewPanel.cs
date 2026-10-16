@@ -128,5 +128,11 @@ internal sealed class PreviewPanel
             var name = _caches.Moodles.FirstOrDefault(m => m.Id == id).Name ?? _caches.MoodlePresets.FirstOrDefault(m => m.Id == id).Name ?? id.ToString()[..8] + "…";
             yield return ($"Moodle: {name}", Widgets.Humanize(f.Value.ToString()), f.Source);
         }
+        foreach (var f in d.Decals)
+        {
+            var p     = f.Value.Placement;
+            var where = string.IsNullOrEmpty(p.PartName) ? p.Surface.ToString() : $"{p.Surface}: {p.PartName}";
+            yield return ("Decal", $"{f.Value.ImageFile} on {where} · {MathF.Round(p.Size * 100)} cm · {MathF.Round(f.Value.Opacity * 100)} %", f.Source);
+        }
     }
 }

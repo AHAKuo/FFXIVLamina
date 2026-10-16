@@ -25,7 +25,7 @@ public sealed partial class LaminaWindow
         ImGui.Spacing();
 
         ImGui.TextUnformatted("How it fits together");
-        Widgets.Paragraph("Profile → Pass Groups (a switch: first true wins, plus Final groups layered on top by priority) → Passes (every matching one contributes; lower rows override) → Layers (a Glamourer design, a Vitrine design, Penumbra mods, a title, moodles). Lamina owns its own Penumbra collection and never touches your other collections. Vitrine is a separate, optional plugin by ahadev that organizes your mods by what they change and turns them into designs you can layer here.");
+        Widgets.Paragraph("Profile → Pass Groups (a switch: first true wins, plus Final groups layered on top by priority) → Passes (every matching one contributes; lower rows override) → Layers (a Glamourer design, a Vitrine design, Penumbra mods, a title, moodles, a decal on your skin). Lamina owns its own Penumbra collection and never touches your other collections. Vitrine is a separate, optional plugin by ahadev that organizes your mods by what they change and turns them into designs you can layer here.");
         ImGui.Spacing();
 
         ImGui.TextUnformatted("Requires");

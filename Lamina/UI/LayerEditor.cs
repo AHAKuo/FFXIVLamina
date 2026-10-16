@@ -1,8 +1,10 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility.Raii;
+using Lamina.Decals;
 using Lamina.Models;
 using Lamina.Runtime.State;
 using Penumbra.Api.Enums;
@@ -14,6 +16,10 @@ internal sealed class LayerEditor
 {
     private readonly LaminaServices _s;
     private readonly UiCaches _caches;
+    private readonly DecalPlacementMode _placement;
+    private readonly FileDialogManager _fileDialogs;
+    private readonly DecalImageStore _images;
+    private readonly Dictionary<Guid, string> _decalErrors = new();
     private static readonly string[] ModToggleNames = { "Enable", "Disable" };
     private static readonly string[] GenderNames = { "Male", "Female" };
     private static readonly EquipSlot[] CrestSlots = { EquipSlot.Head, EquipSlot.Body, EquipSlot.OffHand };
@@ -25,10 +31,13 @@ internal sealed class LayerEditor
         (MetaIndex.VieraEarsVisible, "Viera ears", "Shown",       "Hidden"),
     };
 
-    public LayerEditor(LaminaServices services, UiCaches caches)
+    public LayerEditor(LaminaServices services, UiCaches caches, DecalPlacementMode placement, FileDialogManager fileDialogs, DecalImageStore images)
     {
-        _s      = services;
-        _caches = caches;
+        _s           = services;
+        _caches      = caches;
+        _placement   = placement;
+        _fileDialogs = fileDialogs;
+        _images      = images;
     }
 
     /// <summary> Draws the layer list. Returns true when the pass changed (already marked dirty). </summary>
@@ -95,7 +104,7 @@ internal sealed class LayerEditor
             if (Widgets.IconButton(FontAwesomeIcon.Trash, "Remove layer")) remove = layer.Id;
 
             using var indent = ImRaii.PushIndent(22f * Widgets.Scale);
-            if (DrawLayerFields(layer))
+            if (DrawLayerFields(profile, layer))
             {
                 _s.Profiles.MarkDirty(profile);
                 changed = true;
@@ -122,6 +131,7 @@ internal sealed class LayerEditor
             VitrineDesignLayer.KindName  => (_s.Vitrine.Available, "Vitrine is not installed (separate plugin)."),
             HonorificLayer.KindName      => (_s.Honorific.Available, "Honorific is not loaded."),
             MoodlesLayer.KindName        => (_s.Moodles.Available, "Moodles is not loaded."),
+            DecalLayer.KindName          => (_s.Penumbra.Available && _s.DecalPicker is not null && _s.DecalPublisher is not null, "Penumbra is not loaded or the decal feature could not start."),
             _                            => (false, "Unsupported layer kind."),
         };
 
@@ -136,6 +146,7 @@ internal sealed class LayerEditor
             AppearanceLayer a     => AppearanceSummary(a),
             HonorificLayer h      => h.Clear ? "clear title" : string.IsNullOrEmpty(h.Title) ? "(no title)" : h.Title,
             MoodlesLayer m        => $"+{m.Add.Count + m.AddPresets.Count} / −{m.Remove.Count}",
+            DecalLayer d          => DecalSummary(d),
             _                     => layer.Describe(),
         };
 
@@ -190,7 +201,7 @@ internal sealed class LayerEditor
         return parts.Count == 0 ? "(nothing set)" : Widgets.Truncate(string.Join(", ", parts), 70);
     }
 
-    private bool DrawLayerFields(Layer layer)
+    private bool DrawLayerFields(Profile profile, Layer layer)
         => layer switch
         {
             GlamourerLayer g      => DrawGlamourer(g),
@@ -201,6 +212,7 @@ internal sealed class LayerEditor
             AppearanceLayer a     => DrawAppearance(a),
             HonorificLayer h      => DrawHonorific(h),
             MoodlesLayer m        => DrawMoodles(m),
+            DecalLayer d          => DrawDecal(profile, d),
             UnknownLayer u        => DrawUnknown(u),
             _                     => false,
         };
@@ -1214,6 +1226,188 @@ internal sealed class LayerEditor
         if (Widgets.MultiSelect("Remove moodles##md", _caches.Moodles, m.Remove, id => id.ToString()[..8], "none")) changed = true;
         Widgets.Hint("Adds are kept while the pass matches and removed again when it stops matching.");
         return changed;
+    }
+
+    // ---- Decal --------------------------------------------------------------------------------------
+
+    /// <summary> Size a decal gets when it is first placed: 10 cm. </summary>
+    private const float DefaultDecalSize = 0.10f;
+
+    private string DecalSummary(DecalLayer d)
+    {
+        var imageNote = string.IsNullOrEmpty(d.ImageFile) ? "no image" : _images.Exists(d.ImageFile) ? null : "missing image";
+        if (d.Placement is not { } p)
+            return imageNote is null ? "not placed yet" : $"{imageNote}, not placed";
+        var text = $"on the {SurfaceName(p.Surface)}{(string.IsNullOrEmpty(p.PartName) ? string.Empty : $": {p.PartName}")} · {MathF.Round(p.Size * 100f):0} cm";
+        if (d.Opacity < 0.995f)
+            text += $" · {MathF.Round(d.Opacity * 100f):0} %";
+        if (imageNote is not null)
+            text = $"({imageNote}) {text}";
+        return Widgets.Truncate(text, 70);
+    }
+
+    private static string SurfaceName(DecalSurface surface)
+        => surface.ToString().ToLowerInvariant();
+
+    /// <summary>
+    /// One decal: image thumbnail with the picker, Place / Cancel placing with a status line, and the Size, Rotation and
+    /// Opacity sliders. Slider values follow the drag; the profile is marked (and the decal re-baked) when the slider is released.
+    /// </summary>
+    private bool DrawDecal(Profile profile, DecalLayer d)
+    {
+        var changed = false;
+        var scale   = Widgets.Scale;
+
+        // Image: 64 px thumbnail, the picker and the file name.
+        var box      = 64f * scale;
+        var origin   = ImGui.GetCursorScreenPos();
+        var hasImage = !string.IsNullOrEmpty(d.ImageFile);
+        var exists   = hasImage && _images.Exists(d.ImageFile);
+        ImGui.Dummy(new Vector2(box));
+        var draw = ImGui.GetWindowDrawList();
+        draw.AddRect(origin, origin + new Vector2(box), ImGui.GetColorU32(ImGuiCol.Border), 3f * scale);
+        if (exists)
+        {
+            var wrap = _s.TextureProvider.GetFromFileAbsolute(_images.FullPath(d.ImageFile!)).GetWrapOrEmpty();
+            var fit  = FitInto(wrap.Size, box - 6f * scale);
+            var min  = origin + (new Vector2(box) - fit) / 2f;
+            draw.AddImage(wrap.Handle, min, min + fit);
+        }
+        Widgets.Tooltip(exists ? d.ImageFile! : "No image yet.");
+        ImGui.SameLine();
+        using (ImRaii.Group())
+        {
+            if (ImGui.Button("Choose image…##decal"))
+                OpenDecalImageDialog(profile, d);
+            Widgets.Tooltip("PNG or JPG. The file is copied into Lamina's config folder, so the original may move afterwards.");
+            if (!hasImage)
+                Widgets.Hint("No image chosen.");
+            else if (!exists)
+                ImGui.TextColored(Widgets.Bad, $"Missing image: {d.ImageFile}");
+            else
+                Widgets.Hint(d.ImageFile!);
+            if (_decalErrors.TryGetValue(d.Id, out var error))
+                ImGui.TextColored(Widgets.Bad, error);
+        }
+
+        // Place / Cancel placing, with the status line next to it.
+        ImGui.Spacing();
+        var placing   = _placement.IsActiveFor(d);
+        var hasPlayer = HasLocalPlayer();
+        var canPlace  = _s.DecalPicker is not null && hasPlayer;
+        using (ImRaii.Disabled(!canPlace && !placing))
+        {
+            if (ImGui.Button(placing ? "Cancel placing##decal" : "Place##decal", new Vector2(130f * scale, 0)))
+            {
+                if (placing)
+                    _placement.Cancel();
+                else
+                    _placement.Begin(profile, d, d.Placement?.Size ?? DefaultDecalSize, d.Placement?.Rotation ?? 0f);
+            }
+        }
+        Widgets.Tooltip(_s.DecalPicker is null ? "Penumbra is not loaded or the decal feature could not start."
+            : !hasPlayer ? "Log in first: the decal is placed by clicking your character."
+            : placing ? "Stop placing; the decal stays where it was."
+            : d.Placement is null ? "Then click the spot on your character where the decal goes." : "Pick a new spot. Size and rotation are kept.");
+        ImGui.SameLine();
+        if (placing)
+        {
+            ImGui.TextColored(Widgets.Accent, "Click your character to place the decal. Esc cancels.");
+            if (!string.IsNullOrEmpty(_placement.Diagnostics))
+                ImGui.TextWrapped(_placement.Diagnostics);
+            var showMesh = _placement.ShowMesh;
+            if (ImGui.Checkbox("Show mesh (debug)##decal", ref showMesh))
+                _placement.ShowMesh = showMesh;
+            Widgets.Tooltip("Draws the skin Lamina clicks against as a wireframe (cyan body, yellow face) with a status block in the top-left corner. If the lines sit off your character, placement will be off too.");
+            ImGui.SameLine();
+            var deformerOff = _placement.DeformerOff;
+            if (ImGui.Checkbox("Deformer off##decal", ref deformerOff))
+                _placement.DeformerOff = deformerOff;
+            Widgets.Tooltip("A/B check for the wireframe: poses the skin of your gear without the racial deformer, the way a Midlander would wear it. Leave it off unless the wireframe looks wrong.");
+        }
+        else if (d.Placement is { } placed)
+            ImGui.TextUnformatted(string.IsNullOrEmpty(placed.PartName) ? $"On the {SurfaceName(placed.Surface)}" : $"On the {SurfaceName(placed.Surface)}: {placed.PartName}");
+        else
+            Widgets.Hint("Press Place, then click your character.");
+        if (!placing && d.Placement is { MirroredUv: true } mirrored)
+            Widgets.Hint($"This {SurfaceName(mirrored.Surface)} shares its texture between left and right, so the decal shows on both sides.");
+
+        // A bake runs for a few seconds after every change (read the skin texture, project, encode BC7, redraw).
+        if (_s.DecalPublisher is { Busy: true })
+        {
+            var dots = new string('.', 1 + (int)(ImGui.GetTime() * 2) % 3);
+            ImGui.TextColored(Widgets.Accent, $"Baking the decal into the skin{dots}");
+            Widgets.Tooltip("Reading the skin texture, projecting the image, encoding BC7 and redrawing. A 4K skin takes a few seconds.");
+        }
+
+        // Sliders: cm, degrees and percent in the UI; metres, degrees and 0..1 in the layer.
+        var isPlaced = d.Placement is not null;
+        var width    = 220f * scale;
+        using (ImRaii.Disabled(!isPlaced))
+        {
+            var cm = (int)MathF.Round((d.Placement?.Size ?? DefaultDecalSize) * 100f);
+            ImGui.SetNextItemWidth(width);
+            if (ImGui.SliderInt("Size##decal", ref cm, 1, 60, "%d cm") && d.Placement is { } sized)
+                sized.Size = cm / 100f;
+            if (ImGui.IsItemDeactivatedAfterEdit() && isPlaced)
+                changed = true;
+            Widgets.Tooltip("Width of the decal on the skin; the height follows the image.");
+
+            var degrees = (int)MathF.Round(d.Placement?.Rotation ?? 0f);
+            ImGui.SetNextItemWidth(width);
+            if (ImGui.SliderInt("Rotation##decal", ref degrees, -180, 180, "%d°") && d.Placement is { } rotated)
+                rotated.Rotation = degrees;
+            if (ImGui.IsItemDeactivatedAfterEdit() && isPlaced)
+                changed = true;
+        }
+        var percent = (int)MathF.Round(d.Opacity * 100f);
+        ImGui.SetNextItemWidth(width);
+        if (ImGui.SliderInt("Opacity##decal", ref percent, 0, 100, "%d %%"))
+            d.Opacity = percent / 100f;
+        if (ImGui.IsItemDeactivatedAfterEdit())
+            changed = true;
+        return changed;
+    }
+
+    /// <summary> Opens the image picker; the chosen file is imported into Lamina's decal folder when the dialog closes. </summary>
+    private void OpenDecalImageDialog(Profile profile, DecalLayer d)
+        => _fileDialogs.OpenFileDialog("Choose a decal image", "Images{.png,.jpg,.jpeg},.png,.jpg,.jpeg", (ok, path) =>
+        {
+            if (!ok || string.IsNullOrEmpty(path))
+                return;
+            try
+            {
+                d.ImageFile = _images.Import(path);
+                _decalErrors.Remove(d.Id);
+                _s.Profiles.MarkDirty(profile);
+                _s.Engine.Invalidate();
+            }
+            catch (Exception ex)
+            {
+                _s.Log.Warning(ex, "UI: importing decal image {Path} failed.", path);
+                _decalErrors[d.Id] = $"Could not import the image: {ex.Message}";
+            }
+        });
+
+    private bool HasLocalPlayer()
+    {
+        try
+        {
+            return _s.ObjectTable.LocalPlayer is not null;
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Debug(ex, "UI: reading the local player failed.");
+            return false;
+        }
+    }
+
+    /// <summary> Scales <paramref name="size"/> to fit a square box, keeping the aspect ratio. </summary>
+    private static Vector2 FitInto(Vector2 size, float box)
+    {
+        if (size.X <= 0f || size.Y <= 0f)
+            return new Vector2(box);
+        return size * MathF.Min(box / size.X, box / size.Y);
     }
 
     private static bool DrawUnknown(UnknownLayer u)

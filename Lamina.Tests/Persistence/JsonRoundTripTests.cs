@@ -1,3 +1,4 @@
+using Lamina.Decals;
 using Lamina.Models;
 using Lamina.Persistence;
 using Newtonsoft.Json.Linq;
@@ -168,8 +169,49 @@ public class JsonRoundTripTests
         Assert.Null(partial.State);
         Assert.Null(partial.Priority);
         Assert.Equal(new[] { "Glossy" }, partial.Settings!["Skin"]);
+
+        var decal = Assert.IsType<DecalLayer>(reloaded[9]);
+        Assert.Equal("3f2a9c1e5b7d4e8f9a0b1c2d3e4f5a6b.png", decal.ImageFile);
+        Assert.Equal(0.75f, decal.Opacity);
+        Assert.True(decal.IsComplete);
+        var placement = decal.Placement!;
+        Assert.Equal(DecalSurface.Face, placement.Surface);
+        Assert.Equal(new System.Numerics.Vector3(0.012f, 1.534f, 0.087f), placement.Position);
+        Assert.Equal(new System.Numerics.Vector3(0.1f, 0.2f, 0.9747f), placement.Normal);
+        Assert.Equal(32.5f, placement.Rotation);
+        Assert.Equal(0.08f, placement.Size);
+        Assert.Equal(0.03f, placement.Depth);
+        Assert.Equal(new System.Numerics.Vector2(0.3125f, 0.625f), placement.Uv);
+        Assert.True(placement.MirroredUv);
+        Assert.Equal("Left cheek", placement.PartName);
+
         Assert.Contains("\"kind\": \"Equipment\"", json);
         Assert.Contains("\"kind\": \"Appearance\"", json);
+        Assert.Contains("\"kind\": \"Decal\"", json);
+    }
+
+    [Fact]
+    public void DecalPlacement_Vectors_AreWrittenAsXyz_AndUnplacedDecalOmitsPlacement()
+    {
+        var placed = new DecalLayer
+        {
+            ImageFile = "a.png",
+            Placement = new DecalPlacement { Position = new System.Numerics.Vector3(1, 2, 3), Uv = new System.Numerics.Vector2(4, 5) },
+        };
+        var obj = JObject.Parse(JsonSettings.Serialize(placed));
+        Assert.Equal(1f, obj["placement"]!["position"]!["x"]!.Value<float>());
+        Assert.Equal(3f, obj["placement"]!["position"]!["z"]!.Value<float>());
+        Assert.Equal(4f, obj["placement"]!["uv"]!["x"]!.Value<float>());
+        Assert.Equal(5f, obj["placement"]!["uv"]!["y"]!.Value<float>());
+        Assert.Null(obj["isComplete"]);
+
+        var unplaced = JObject.Parse(JsonSettings.Serialize(new DecalLayer()));
+        Assert.Null(unplaced["placement"]);
+        Assert.Null(unplaced["imageFile"]);
+        Assert.Equal(1f, unplaced["opacity"]!.Value<float>());
+        var reloaded = Assert.IsType<DecalLayer>(JsonSettings.Deserialize<Layer>(unplaced.ToString()));
+        Assert.Null(reloaded.Placement);
+        Assert.False(reloaded.IsComplete);
     }
 
     [Fact]

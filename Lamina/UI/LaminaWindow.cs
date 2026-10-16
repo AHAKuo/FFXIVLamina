@@ -1,7 +1,9 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
+using Lamina.Decals;
 using Lamina.Models;
 using Lamina.Runtime.Compose;
 
@@ -18,6 +20,8 @@ public sealed partial class LaminaWindow : Window, IDisposable
     private readonly ConditionEditor _conditions;
     private readonly LayerEditor _layers;
     private readonly PreviewPanel _preview;
+    private readonly DecalPlacementMode _placement;
+    private readonly FileDialogManager _fileDialogs = new();
 
     // Selection state (validated every frame against the model).
     private Guid? _editProfileId;
@@ -35,7 +39,9 @@ public sealed partial class LaminaWindow : Window, IDisposable
         _s          = services;
         _caches     = new UiCaches(services);
         _conditions = new ConditionEditor(services, _caches);
-        _layers     = new LayerEditor(services, _caches);
+        _placement  = new DecalPlacementMode(services);
+        _layers     = new LayerEditor(services, _caches, _placement, _fileDialogs,
+            new DecalImageStore(DecalPaths.ImageDirectory(services.PluginInterface.GetPluginConfigDirectory())));
         _preview    = new PreviewPanel(services, _caches);
         DebugOverlay = new DebugOverlayWindow(services) { IsOpen = services.Profiles.Config.DebugOverlay };
 
@@ -77,12 +83,24 @@ public sealed partial class LaminaWindow : Window, IDisposable
     }
 
     public void Dispose()
-        => _caches.Dispose();
+    {
+        _placement.Cancel();
+        _fileDialogs.Reset();
+        _caches.Dispose();
+    }
+
+    /// <summary> Closing the window ends decal placing: its overlay is only drawn while the window draws. </summary>
+    public override void OnClose()
+        => _placement.Cancel();
 
     public override void Draw()
     {
         _caches.EnsureFresh();
         ValidateSelection();
+
+        // The decal pick overlay and the image file dialog live outside the tab bar; both need a call every frame.
+        _placement.Draw();
+        _fileDialogs.Draw();
 
         using var tabs = ImRaii.TabBar("##laminaTabs");
         if (!tabs)

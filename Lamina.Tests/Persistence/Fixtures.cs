@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lamina.Decals;
 using Lamina.Models;
 
 namespace Lamina.Tests.Persistence;
@@ -121,6 +122,23 @@ public static class Fixtures
                 },
             },
             new PenumbraAdjustLayer { Mods = { new ModState { ModDirectory = "Eve", State = null, Priority = null, Settings = new() { ["Skin"] = new() { "Glossy" } } } } },
+            new DecalLayer
+            {
+                ImageFile = "3f2a9c1e5b7d4e8f9a0b1c2d3e4f5a6b.png",
+                Opacity   = 0.75f,
+                Placement = new DecalPlacement
+                {
+                    Surface    = DecalSurface.Face,
+                    Position   = new Vector3(0.012f, 1.534f, 0.087f),
+                    Normal     = new Vector3(0.1f, 0.2f, 0.9747f),
+                    Rotation   = 32.5f,
+                    Size       = 0.08f,
+                    Depth      = 0.03f,
+                    Uv         = new Vector2(0.3125f, 0.625f),
+                    MirroredUv = true,
+                    PartName   = "Left cheek",
+                },
+            },
             new EquipmentCleanseLayer { Enabled = false },
         };
 }
