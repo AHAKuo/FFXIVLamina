@@ -138,6 +138,14 @@ overlay (`Lamina/UI`). 411 unit tests.
 - Hidden geometry (Eve's attribute-gated neck/seam parts, piercings) no longer catches clicks or paint.
 - Bake / convert / redirect / redraw loop, cache hits, temp mod removal on layer removal, profile switch and unload.
 
+### Known issues (fix later)
+- [ ] **Decals can break when a virtual design is first applied**; `/lam reapply` once the draw has finished fixes them.
+      Likely cause: the apply publishes mods and decals in the same frame, so the publisher snapshots the skin meshes and
+      textures of the outfit still on screen, bakes against those, and the redraw that follows loads the new outfit with a
+      different skin model / texture. Fix idea: when a mods redraw was sent and decals are applied, forget the decal hash and
+      re-publish once after `GameObjectRedrawn` for the player (the mesh provider's cache key already tracks model
+      LoadState, so a short delay or a LoadState check keeps it from baking against half-loaded models).
+
 ### Known limits
 - A click must land on true skin: a spot covered by a cloth mesh that reuses the skin texture region (sheer tops) can
   paint under the cloth. The hover label names the surface and part before the click.
