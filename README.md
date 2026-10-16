@@ -5,6 +5,96 @@ Lamina is a FFXIV dalamud plugin that takes your appearance automation to the ne
 You are RP'ing as multiple characters, and each of them has a special look in different possible situations, and not only that, they also have special titles, buffs or debuffs, and even specific mods activated at a time (VFX, SFX, Animation, etc...). You want to switch between them in one click and also see them swap between all these modes super quick.
 If that sounds like something you want, then Lamina is for you.
 
+## A tour in pictures
+The screenshots below walk through one setup from the top down: a profile, the groups and passes inside it, the layers inside a pass, and what the character looks like at the end.
+
+### One switch, a whole character
+Lamina off is your plain Glamourer and Penumbra state. Lamina on is whatever the active profile resolves to: outfit, hair, hair colour, body mods, titles, tattoos. Flipping the switch is one redraw either way.
+
+![Lamina off and Lamina on](images/readme/02-lamina-off-on.png)
+
+Off is a full cleanup, not a pause: Lamina's mod settings, the Glamourer state, the title, moodles, the temporary Customize+ profile and the Simple Heels offset it set are all removed.
+
+![What turning Lamina off does](images/readme/21-lamina-off-tooltip.png)
+
+### Profiles: one per character
+A profile is a complete Lamina setup. Keep one per character (or per mood) and tick the one you want; enabling a profile disables the others for the same target. Profiles can be exported and imported from the clipboard, so you can share a whole character with a friend.
+
+![The Profiles tab](images/readme/01-profiles.png)
+
+### Pass groups and passes
+Inside a profile, looks are organized into **pass groups** and **passes**. Groups are checked top to bottom and the first group whose conditions match wins. Inside a group every matching pass contributes its layers, and lower passes override higher ones. A group marked **Final Pass** stops evaluation after it.
+
+![The Passes tab: groups, passes, and the selected pass](images/readme/03-passes-overview.png)
+
+A group can carry its own conditions, so a whole set of passes only exists while, say, you are in a housing district or on a healer job.
+
+![Pass group with group conditions](images/readme/04-pass-group.png)
+
+### Conditions
+Each pass (and each group) has a condition tree. Conditions combine with **All of** or **Any of**, can be negated with **Not**, and nest into sub-groups for anything more involved.
+
+![All of / Any of](images/readme/05-group-all-any.png)
+
+Condition types cover time, calendar, weather, biome, location, duty, housing, social state, character, job, online status, status effects, movement, body state, emote or pose, and activity.
+
+![Condition types](images/readme/06-condition-types.png)
+
+Each type has its own editor. The Job condition, for example, matches on jobs, roles, disciplines or gearsets, a level range and whether the weapon is drawn, with hold and linger timers so a quick weapon flick does not flicker your outfit.
+
+![The Job condition](images/readme/07-condition-job.png)
+
+### Layers
+A pass is a stack of layers, and lower layers override the ones above them. Layer types: Glamourer design, Equipment Changes, Equipment Cleanse, Appearance Changes, Penumbra Adjust, Vitrine Design, Honorific, Moodles, Customize+, Simple Heels and Decal.
+
+**Penumbra Adjust** sets the state, priority and option groups of individual mods. Every part has an "applies" checkbox, so a pass can flip one option group of a mod that an earlier pass enabled and inherit the rest.
+
+![Penumbra Adjust layer](images/readme/08-layer-penumbra-adjust.png)
+
+**Appearance Changes** edits the Glamourer customization fields directly, no saved design needed. Only ticked fields apply; everything else passes through from the layers above. Here a Vitrine hair design is stacked with a hair colour and highlights colour change.
+
+![Vitrine hair design plus Appearance Changes](images/readme/09-layer-vitrine-hair-appearance.png)
+
+**Equipment Changes** does the same for gear: an item per slot, dyes, crest, and hat / visor / weapon / Viera ears visibility. Here it recolours the body and feet of the outfit layered above it.
+
+![Equipment Changes layer](images/readme/12-layer-equipment-changes.png)
+
+### Outfits from Vitrine
+With the separate [Vitrine](https://github.com/AHAKuo/FFXIVVitrine) plugin installed, any mod in your Penumbra collection becomes a design you can drop into a pass. Vitrine shows the mod's own preview photo and the items it affects.
+
+<img src="images/readme/10-vitrine-card.png" width="366" alt="A mod card in Vitrine">
+
+The **Vitrine Design** layer carries the mod's settings and the pieces the design equips. **Override slots** lets one pass take the body from one design and the boots from another, and **Clear other slots** empties every slot the design does not fill so an earlier outfit does not bleed through.
+
+![Vitrine Design layer](images/readme/11-layer-vitrine-outfit.png)
+
+### Tattoos, freckles and beauty marks (Decal layer)
+The **Decal** layer puts a PNG or JPG on your character's skin. It is experimental: it needs a click on true skin, mirrored-UV bodies show it on both sides, and some body mods replace the skin texture in ways the bake cannot follow.
+
+![Decal layer: experimental note](images/readme/13-decal-experimental.png)
+
+Pick an image, press **Place**, then click the spot on your character in the game world. Lamina names the nearest bone and bakes the decal into the body or face texture.
+
+<img src="images/readme/14-decal-choose-image.png" width="421" alt="Choosing a decal image">
+
+![Placing a beauty mark on the chest, and the result](images/readme/15-decal-place-chest.png)
+
+Each decal has a size, rotation and opacity.
+
+![Placing a tattoo on the upper arm, and the result](images/readme/16-decal-place-arm.png)
+
+![Decal layer settings](images/readme/17-decal-layer-settings.png)
+
+The decal is part of the skin, so it holds up from any angle and in any light.
+
+![The same tattoo from two angles](images/readme/18-decal-tattoo-angles.png)
+
+Decals stack. This pass carries three: a beauty mark on the chest, a tattoo on the arm and freckles on the face.
+
+![Three decal layers in one pass](images/readme/19-decal-stack.png)
+
+<img src="images/readme/20-decal-face.png" width="500" alt="Freckles from a face decal and a beauty mark on the chest">
+
 ## Installation
 Lamina is one of ahadev's plugins and installs through Dalamud's plugin installer from a custom repository.
 
