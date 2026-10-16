@@ -197,13 +197,13 @@ public sealed class PenumbraBridge : BridgeBase, IPenumbraBridge
 
     /// <inheritdoc/>
     public Task ConvertTextureFile(string inputFile, string outputFile, TextureType textureType, bool mipMaps)
-        => Call(() => _convertTextureFile.Invoke(inputFile, outputFile, textureType, mipMaps),
-            Task.FromException(new InvalidOperationException("Penumbra unavailable")), nameof(ConvertTextureFile));
+        => Call<Task?>(() => _convertTextureFile.Invoke(inputFile, outputFile, textureType, mipMaps), null, nameof(ConvertTextureFile))
+        ?? Task.FromException(new InvalidOperationException("Penumbra unavailable"));
 
     /// <inheritdoc/>
     public Task ConvertTextureData(byte[] rgbaData, int width, string outputFile, TextureType textureType, bool mipMaps)
-        => Call(() => _convertTextureData.Invoke(rgbaData, width, outputFile, textureType, mipMaps),
-            Task.FromException(new InvalidOperationException("Penumbra unavailable")), nameof(ConvertTextureData));
+        => Call<Task?>(() => _convertTextureData.Invoke(rgbaData, width, outputFile, textureType, mipMaps), null, nameof(ConvertTextureData))
+        ?? Task.FromException(new InvalidOperationException("Penumbra unavailable"));
 
     private void OnModAdded(string modDirectory)
         => Dispatch(() => ModAdded?.Invoke(modDirectory), nameof(ModAdded));

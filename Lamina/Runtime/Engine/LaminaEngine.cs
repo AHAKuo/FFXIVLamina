@@ -2,6 +2,7 @@ using System.Text;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Plugin.Services;
 using Glamourer.Api.Enums;
+using Lamina.Decals;
 using Lamina.Ipc;
 using Lamina.Models;
 using Lamina.Persistence;
@@ -36,6 +37,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     private readonly IHonorificBridge _honorific;
     private readonly IMoodlesBridge _moodles;
     private readonly IVitrineBridge _vitrine;
+    private readonly IDecalPublisher? _decals;
     private readonly IFramework _framework;
     private readonly IObjectTable _objects;
     private readonly IClientState _clientState;
@@ -68,11 +70,15 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     private Guid? _lastAssignedCollection;
     private bool _disposed;
 
-    /// <summary> Creates the engine and subscribes to every source of change. </summary>
+    /// <summary>
+    /// Creates the engine and subscribes to every source of change. <paramref name="decalPublisher"/> is null when the decal
+    /// feature could not start; decal layers are then reported as a problem instead of applied.
+    /// </summary>
     public LaminaEngine(ProfileStore profiles, StateTracker tracker, ConditionEvaluator evaluator, PassCompositor compositor,
         LayerResolver resolver, GlamourerDesignCache cache, IGlamourerBridge glamourer, IPenumbraBridge penumbra,
         IHonorificBridge honorific, IMoodlesBridge moodles, IVitrineBridge vitrine, IFramework framework, IObjectTable objects,
-        IClientState clientState, ICondition condition, GameCatalog catalog, IPluginLog log, TickClock? clock = null)
+        IClientState clientState, ICondition condition, GameCatalog catalog, IPluginLog log, TickClock? clock = null,
+        IDecalPublisher? decalPublisher = null)
     {
         _profiles    = profiles;
         _tracker     = tracker;
@@ -85,6 +91,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _honorific   = honorific;
         _moodles     = moodles;
         _vitrine     = vitrine;
+        _decals      = decalPublisher;
         _framework   = framework;
         _objects     = objects;
         _clientState = clientState;
@@ -94,9 +101,9 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _clock       = clock ?? new TickClock();
 
         _redraw  = new RedrawScheduler(_penumbra, LocalPlayerIndex, m => _log.Debug(m));
-        _applier = new Applier(_glamourer, _penumbra, _honorific, _moodles, _store, _redraw, () => _profiles.Config, () => CollectionId,
+        _applier = new Applier(_glamourer, _penumbra, _honorific, _moodles, _decals, _store, _redraw, () => _profiles.Config, () => CollectionId,
             () => _collectionStatus, LocalPlayerIndex, LocalPlayerAddress, _clock.Read, m => _log.Debug(m));
-        _cleanup = new CleanupService(_glamourer, _penumbra, _honorific, _moodles, _store, _redraw, _evaluator, () => _profiles.Config,
+        _cleanup = new CleanupService(_glamourer, _penumbra, _honorific, _moodles, _decals, _store, _redraw, _evaluator, () => _profiles.Config,
             () => CollectionId, LocalPlayerIndex, LocalPlayerAddress, _clock.Read, m => _log.Information(m));
         _core = new EngineCore(_compositor, _resolver, _evaluator, _applier, _cleanup, _store, () => _profiles.Config);
 
@@ -116,6 +123,8 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _clientState.Logout            += OnLogout;
         _condition.ConditionChange     += OnConditionChange;
         _framework.Update              += OnFrameworkUpdate;
+        if (_decals is not null)
+            _decals.Completed += OnDecalPublishCompleted;
 
         // Dalamud constructs plugins off the main thread and the object table refuses off-thread access,
         // so the first collection check runs on the first framework tick instead of here.
@@ -254,7 +263,8 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
           .Append(Flag("Glamourer", _glamourer.Available)).Append(", ")
           .Append(Flag("Penumbra", _penumbra.Available)).Append(", ")
           .Append(Flag("Honorific", _honorific.Available)).Append(", ")
-          .AppendLine(Flag("Moodles", _moodles.Available));
+          .Append(Flag("Moodles", _moodles.Available)).Append(", ")
+          .AppendLine(_decals is null ? "Decals (unavailable)" : "Decals");
         sb.Append("State: ").Append(_catalog.TerritoryName(s.TerritoryId)).Append(" (#").Append(s.TerritoryId).Append(") · ")
           .Append(_catalog.WeatherName(s.WeatherId)).Append(" · ET ").Append(s.EorzeaTime.ToString(@"hh\:mm")).Append(" · ")
           .Append(_catalog.JobName(s.ClassJobId)).Append(" L").Append(s.Level).Append(" · ")
@@ -268,7 +278,8 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         if (LastApply is { } apply)
         {
             sb.Append("Last apply: ").Append(apply.AtUtc.ToLocalTime().ToString("HH:mm:ss")).Append(" · glamourer ").Append(apply.GlamourerApplied)
-              .Append(" · mods ").Append(apply.ModsWritten).Append(" · redraw ").Append(apply.RedrawRequested ? (apply.RedrawDeferred ? "deferred" : "yes") : "no");
+              .Append(" · mods ").Append(apply.ModsWritten).Append(" · decals ").Append(apply.DecalsPublished ? "published" : "none")
+              .Append(" · redraw ").Append(apply.RedrawRequested ? (apply.RedrawDeferred ? "deferred" : "yes") : "no");
             if (apply.Problems.Count > 0)
                 sb.Append(" · problems: ").Append(string.Join("; ", apply.Problems));
             sb.AppendLine();
@@ -354,7 +365,10 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
             if (_dirty)
                 Evaluate(now);
 
-            _redraw.Tick(_tracker.Current, _profiles.Config.RedrawPolicy);
+            if (_redraw.Tick(_tracker.Current, _profiles.Config.RedrawPolicy))
+                _log.Information("Redraw sent to Penumbra.");
+            else if (_redraw.Pending && _tracker.Current.RedrawUnsafe)
+                _log.Debug("Redraw deferred: unsafe right now.");
         }
         catch (Exception ex)
         {
@@ -496,10 +510,13 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
                 var code = _penumbra.RemoveAllTemporaryModSettings(old);
                 if (code is not PenumbraApiEc.Success and not PenumbraApiEc.NothingChanged)
                     _log.Warning($"Could not clear Lamina's settings from the previous collection: {code}");
+                if (_store.DecalsApplied)
+                    _decals?.Clear(old);
             }
 
             _store.ModsHash    = null;
             _store.ModsWritten = 0;
+            _store.DecalsHash  = null;
             _log.Information("The Lamina collection is no longer assigned to your character; mods are skipped until it is assigned again in Penumbra.");
         }
         else if (_collectionStatus == CollectionStatus.Assigned)
@@ -543,6 +560,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         {
             _store.ModsHash    = null;
             _store.ModsWritten = 0;
+            _store.DecalsHash  = null;
             _redraw.Cancel();
         }
 
@@ -583,6 +601,42 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _store.PresetsApplied.Clear();
         _store.DesignHash = null;
         _dirty            = true;
+    }
+
+    private void OnDecalPublishCompleted(DecalPublishResult result)
+    {
+        if (_disposed)
+            return;
+
+        if (!_framework.IsInFrameworkUpdateThread)
+        {
+            // The publisher completes on the framework thread; this only guards a foreign implementation.
+            _ = _framework.RunOnFrameworkThread(() => OnDecalPublishCompleted(result));
+            return;
+        }
+
+        foreach (var problem in result.Problems)
+            _log.Warning($"Decal publish: {problem}");
+
+        // The character picks the baked textures up on redraw; every redirected surface wants one.
+        if (result.Success || result.Published > 0)
+        {
+            _redraw.Request();
+            _log.Information($"Decal publish completed: {result.Published} surface(s) redirected; redraw requested "
+                           + $"(policy {_profiles.Config.RedrawPolicy}, unsafe now: {_tracker.Current.RedrawUnsafe}).");
+        }
+
+        if (result.Success)
+        {
+            _log.Debug($"Decals published: {result.Published} surface(s) redirected.");
+            return;
+        }
+
+        // Forget the decal section so the next evaluation, whenever something else triggers it, publishes again. Nothing is
+        // triggered here: a persistent failure must not loop, and the apply backoff spaces the retries out.
+        _store.DecalsHash = null;
+        _store.DesignHash = null;
+        _retryDue         = _clock.Now + ApplyRetryBackoff;
     }
 
     private void OnLogin()
@@ -659,6 +713,8 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _clientState.Login             -= OnLogin;
         _clientState.Logout            -= OnLogout;
         _condition.ConditionChange     -= OnConditionChange;
+        if (_decals is not null)
+            _decals.Completed -= OnDecalPublishCompleted;
 
         try
         {

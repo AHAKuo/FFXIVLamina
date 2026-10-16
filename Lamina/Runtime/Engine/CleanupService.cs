@@ -1,4 +1,5 @@
 using Glamourer.Api.Enums;
+using Lamina.Decals;
 using Lamina.Ipc;
 using Lamina.Models;
 using Penumbra.Api.Enums;
@@ -6,7 +7,7 @@ using Penumbra.Api.Enums;
 namespace Lamina.Runtime.Engine;
 
 /// <summary>
-/// Undoes only Lamina's own changes (TDD 7.2 Cleanup / Revert): removes Lamina's temporary Penumbra settings, unlocks and
+/// Undoes only Lamina's own changes (TDD 7.2 Cleanup / Revert): removes Lamina's temporary Penumbra settings and its decal mod, unlocks and
 /// reverts the Glamourer state to automation, clears the Honorific title if Lamina set one, removes the Moodles and presets
 /// Lamina applied, then asks for one redraw. Lamina never touches collection assignments: the player manages those in Penumbra.
 /// </summary>
@@ -16,6 +17,7 @@ public sealed class CleanupService
     private readonly IPenumbraBridge _penumbra;
     private readonly IHonorificBridge _honorific;
     private readonly IMoodlesBridge _moodles;
+    private readonly IDecalPublisher? _decals;
     private readonly AppliedStateStore _store;
     private readonly RedrawScheduler _redraw;
     private readonly IConditionEvaluator _evaluator;
@@ -30,6 +32,7 @@ public sealed class CleanupService
     /// <param name="penumbra"> Penumbra bridge. </param>
     /// <param name="honorific"> Honorific bridge. </param>
     /// <param name="moodles"> Moodles bridge. </param>
+    /// <param name="decals"> Decal publisher; null when the decal feature could not start. </param>
     /// <param name="store"> Applied state; reset at the end. </param>
     /// <param name="redraw"> Redraw scheduler. </param>
     /// <param name="evaluator"> Condition evaluator; its timers are reset unless the caller keeps them. </param>
@@ -40,7 +43,7 @@ public sealed class CleanupService
     /// <param name="clock"> UTC clock. </param>
     /// <param name="log"> Optional logger. </param>
     public CleanupService(IGlamourerBridge glamourer, IPenumbraBridge penumbra, IHonorificBridge honorific, IMoodlesBridge moodles,
-        AppliedStateStore store, RedrawScheduler redraw, IConditionEvaluator evaluator, Func<LaminaConfig> config,
+        IDecalPublisher? decals, AppliedStateStore store, RedrawScheduler redraw, IConditionEvaluator evaluator, Func<LaminaConfig> config,
         Func<Guid?> collectionId, Func<int?> localPlayerIndex, Func<nint> localPlayerAddress, Func<DateTime>? clock = null,
         Action<string>? log = null)
     {
@@ -48,6 +51,7 @@ public sealed class CleanupService
         _penumbra           = penumbra;
         _honorific          = honorific;
         _moodles            = moodles;
+        _decals             = decals;
         _store              = store;
         _redraw             = redraw;
         _evaluator          = evaluator;
@@ -60,7 +64,7 @@ public sealed class CleanupService
     }
 
     /// <summary> Outcome of a cleanup, for logging and the UI. </summary>
-    public sealed record CleanupResult(string Reason, bool ModsCleared, bool GlamourerReverted, bool HonorificCleared,
+    public sealed record CleanupResult(string Reason, bool ModsCleared, bool DecalsCleared, bool GlamourerReverted, bool HonorificCleared,
         int MoodlesRemoved, int PresetsRemoved, bool RedrawSent, IReadOnlyList<string> Problems);
 
     /// <summary> Full cleanup: master toggle off, logout, plugin unload. </summary>
@@ -91,6 +95,14 @@ public sealed class CleanupService
             modsCleared = code is PenumbraApiEc.Success;
             if (code is not PenumbraApiEc.Success and not PenumbraApiEc.NothingChanged)
                 problems.Add($"RemoveAllTemporaryModSettings: {code}");
+        }
+
+        // 1b. Decals: remove Lamina's decal temporary mod (the baked textures stay in the cache folder for reuse).
+        var decalsCleared = false;
+        if (_store.DecalsApplied && _decals is not null && _penumbra.Available && _collectionId() is { } decalCollection)
+        {
+            _decals.Clear(decalCollection);
+            decalsCleared = true;
         }
 
         // 2. Glamourer: unlock and hand the character back to automation.
@@ -142,7 +154,7 @@ public sealed class CleanupService
 
         // 5. One redraw if the collection changed.
         var redrawSent = false;
-        if (modsCleared || _store.ModsApplied)
+        if (modsCleared || _store.ModsApplied || decalsCleared)
         {
             _redraw.Request();
             redrawSent = redrawNow || config.RedrawPolicy == RedrawPolicy.Immediate ? _redraw.RedrawNow() : false;
@@ -152,10 +164,10 @@ public sealed class CleanupService
         if (resetEvaluator)
             _evaluator.Reset();
 
-        _log?.Invoke($"Cleanup ({reason}): mods cleared {modsCleared}, glamourer reverted {reverted}, honorific cleared {honorificCleared}, "
+        _log?.Invoke($"Cleanup ({reason}): mods cleared {modsCleared}, decals cleared {decalsCleared}, glamourer reverted {reverted}, honorific cleared {honorificCleared}, "
                    + $"moodles removed {moodlesRemoved}, presets removed {presetsRemoved}, redraw sent {redrawSent}"
                    + (problems.Count > 0 ? $", problems: {string.Join("; ", problems)}" : string.Empty));
 
-        return new CleanupResult(reason, modsCleared, reverted, honorificCleared, moodlesRemoved, presetsRemoved, redrawSent, problems);
+        return new CleanupResult(reason, modsCleared, decalsCleared, reverted, honorificCleared, moodlesRemoved, presetsRemoved, redrawSent, problems);
     }
 }

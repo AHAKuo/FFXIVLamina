@@ -17,6 +17,7 @@ public enum CollectionStatus
 }
 
 /// <summary> Outcome of the last apply, for the Settings / debug overlay. </summary>
+/// <param name="DecalsPublished"> A decal publish was started (its bake and redirect complete asynchronously). </param>
 public sealed record ApplyInfo(
     DateTime AtUtc,
     string DesignHash,
@@ -25,6 +26,7 @@ public sealed record ApplyInfo(
     int ModsWritten,
     bool HonorificApplied,
     bool MoodlesApplied,
+    bool DecalsPublished,
     bool RedrawRequested,
     bool RedrawDeferred,
     IReadOnlyList<string> Problems);

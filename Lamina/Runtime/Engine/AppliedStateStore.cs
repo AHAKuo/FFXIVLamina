@@ -32,6 +32,16 @@ public sealed class AppliedStateStore
     /// <summary> How many mods were written on the last apply. </summary>
     public int ModsWritten { get; set; }
 
+    /// <summary>
+    /// Hash of the decal list Lamina last handed to the publisher. Null when nothing is published (no decal temporary mod in
+    /// the collection); the engine clears it again when a publish fails so the next evaluation retries.
+    /// </summary>
+    public string? DecalsHash { get; set; }
+
+    /// <summary> True while Lamina's decal temporary mod is (or is about to be) in the collection. </summary>
+    public bool DecalsApplied
+        => DecalsHash is not null;
+
     /// <summary> The Honorific title Lamina set (including an explicit clear), or null when Lamina never touched the title. </summary>
     public HonorificTitle? HonorificSet { get; set; }
 
@@ -50,7 +60,7 @@ public sealed class AppliedStateStore
     /// <summary> True while Lamina has anything applied anywhere that a cleanup would need to undo. </summary>
     public bool AnythingApplied
         => DesignHash is not null || ModsApplied || GlamourerApplied || HonorificSet is not null
-         || MoodlesAdded.Count > 0 || PresetsApplied.Count > 0;
+         || MoodlesAdded.Count > 0 || PresetsApplied.Count > 0 || DecalsApplied;
 
     /// <summary>
     /// Forgets everything applied. With <paramref name="keepGlamourer"/> the Glamourer hash survives: used on profile switches,
@@ -64,6 +74,7 @@ public sealed class AppliedStateStore
         GlamourerHash = keepGlamourer ? glamourer : null;
         ModsHash      = null;
         ModsWritten   = 0;
+        DecalsHash    = null;
         HonorificSet  = null;
         MoodlesAdded.Clear();
         PresetsApplied.Clear();

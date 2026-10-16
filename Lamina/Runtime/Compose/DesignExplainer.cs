@@ -1,4 +1,5 @@
 using System.Text;
+using Lamina.Decals;
 using Lamina.Models;
 
 namespace Lamina.Runtime.Compose;
@@ -57,6 +58,8 @@ public static class DesignExplainer
                 Line(sb, "Honorific", h.Value.Clear ? "clear" : $"\"{h.Value.Title}\" ({(h.Value.IsPrefix ? "prefix" : "suffix")})", h.Source);
             foreach (var (id, f) in d.Moodles.OrderBy(kv => kv.Key))
                 Line(sb, $"Moodle {id}", f.Value.ToString(), f.Source);
+            foreach (var f in d.Decals)
+                Line(sb, $"Decal {f.Value.ImageFile}", DescribeDecal(f.Value), f.Source);
         }
 
         if (skipped is { Count: > 0 })
@@ -67,6 +70,14 @@ public static class DesignExplainer
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary> Surface (and picked part when known), size and opacity of a decal. </summary>
+    private static string DescribeDecal(DecalSpec spec)
+    {
+        var p     = spec.Placement;
+        var where = string.IsNullOrEmpty(p.PartName) ? p.Surface.ToString() : $"{p.Surface} / {p.PartName}";
+        return FormattableString.Invariant($"{where} · size {p.Size:0.###} m · opacity {spec.Opacity:P0}");
     }
 
     private static void Line(StringBuilder sb, string field, string value, Provenance source)

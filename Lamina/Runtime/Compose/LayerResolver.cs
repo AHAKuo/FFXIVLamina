@@ -1,3 +1,4 @@
+using Lamina.Decals;
 using Lamina.Ipc;
 using Lamina.Models;
 using Newtonsoft.Json.Linq;
@@ -59,6 +60,8 @@ public sealed class LayerResolver
                 return ResolveHonorific(h, source);
             case MoodlesLayer m:
                 return ResolveMoodles(m, source);
+            case DecalLayer d:
+                return ResolveDecal(d, source, out skipReason);
             default:
                 skipReason = $"unsupported layer kind '{layer.Kind}'";
                 return null;
@@ -267,6 +270,31 @@ public sealed class LayerResolver
             draft.Moodles[id] = new Field<MoodleOp>(MoodleOp.Remove, source);
         }
 
+        return draft;
+    }
+
+    /// <summary>
+    /// Decal: one frozen <see cref="DecalSpec"/> per complete layer (image chosen and placed). The placement is cloned so later
+    /// edits in the UI never leak into a frozen design, and the opacity is clamped to 0..1.
+    /// </summary>
+    private static DesignDraft? ResolveDecal(DecalLayer layer, Provenance source, out string? skipReason)
+    {
+        skipReason = null;
+        if (string.IsNullOrEmpty(layer.ImageFile))
+        {
+            skipReason = "no image chosen";
+            return null;
+        }
+
+        if (layer.Placement is null)
+        {
+            skipReason = "not placed";
+            return null;
+        }
+
+        var spec  = new DecalSpec(layer.ImageFile, layer.Placement.Clone(), Math.Clamp(layer.Opacity, 0f, 1f));
+        var draft = new DesignDraft();
+        draft.Decals.Add(new Field<DecalSpec>(spec, source));
         return draft;
     }
 }

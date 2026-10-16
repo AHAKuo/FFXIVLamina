@@ -1,4 +1,5 @@
 using Glamourer.Api.Enums;
+using Lamina.Decals;
 using Lamina.Ipc;
 using Lamina.Models;
 using Lamina.Runtime.Compose;
@@ -8,7 +9,8 @@ namespace Lamina.Runtime.Engine;
 
 /// <summary>
 /// Pushes a design's delta to every integration in one batch and in one frame (TDD 7.1 #6, 5.8):
-/// Penumbra (clean slate, then the full mod state) → Glamourer (locked state) → Honorific → Moodles → redraw request.
+/// Penumbra (clean slate, then the full mod state) → Glamourer (locked state) → Honorific → Moodles → decals (handed to the
+/// publisher, which bakes asynchronously and completes with its own redraw request) → redraw request.
 /// Never throws; every outcome lands in the returned <see cref="ApplyInfo"/>. The design hash is recorded only when every
 /// attempted section succeeded, so a transient failure (actor not ready, collection missing) is retried on the next evaluation.
 /// </summary>
@@ -18,6 +20,7 @@ public sealed class Applier
     private readonly IPenumbraBridge _penumbra;
     private readonly IHonorificBridge _honorific;
     private readonly IMoodlesBridge _moodles;
+    private readonly IDecalPublisher? _decals;
     private readonly AppliedStateStore _store;
     private readonly RedrawScheduler _redraw;
     private readonly Func<LaminaConfig> _config;
@@ -32,6 +35,7 @@ public sealed class Applier
     /// <param name="penumbra"> Penumbra bridge. </param>
     /// <param name="honorific"> Honorific bridge (optional plugin; skipped while unavailable). </param>
     /// <param name="moodles"> Moodles bridge (optional plugin; skipped while unavailable). </param>
+    /// <param name="decals"> Decal publisher; null when the decal feature could not start (decal layers are then a reported problem, not a retry). </param>
     /// <param name="store"> Applied state, updated after every apply. </param>
     /// <param name="redraw"> Receives the redraw request when mods changed. </param>
     /// <param name="config"> Current config (HoldGlamourerState). </param>
@@ -42,7 +46,7 @@ public sealed class Applier
     /// <param name="clock"> UTC clock. </param>
     /// <param name="log"> Optional debug logger. </param>
     public Applier(IGlamourerBridge glamourer, IPenumbraBridge penumbra, IHonorificBridge honorific, IMoodlesBridge moodles,
-        AppliedStateStore store, RedrawScheduler redraw, Func<LaminaConfig> config, Func<Guid?> collectionId,
+        IDecalPublisher? decals, AppliedStateStore store, RedrawScheduler redraw, Func<LaminaConfig> config, Func<Guid?> collectionId,
         Func<CollectionStatus> collectionStatus, Func<int?> localPlayerIndex, Func<nint> localPlayerAddress,
         Func<DateTime>? clock = null, Action<string>? log = null)
     {
@@ -50,6 +54,7 @@ public sealed class Applier
         _penumbra           = penumbra;
         _honorific          = honorific;
         _moodles            = moodles;
+        _decals             = decals;
         _store              = store;
         _redraw             = redraw;
         _config             = config;
@@ -71,14 +76,14 @@ public sealed class Applier
         {
             _store.DesignHash = design.ContentHash;
             _store.LastDesign = design;
-            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, problems);
+            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, false, problems);
         }
 
         if (_localPlayerIndex() is not { } index)
         {
             problems.Add("no local player");
             _store.DesignHash = null;
-            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, problems);
+            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, false, problems);
         }
 
         // True until a section that was attempted failed in a way worth retrying.
@@ -260,7 +265,46 @@ public sealed class Applier
             }
         }
 
-        // (e) One redraw, only when mods actually changed in the collection.
+        // (e) Decals: the publisher bakes them into the skin textures and redirects those in the collection, asynchronously; the
+        // engine requests the redraw when it completes and forgets the hash again if it fails. Mod changes republish too, since
+        // the bake contains the upstream skin texture a body mod may have just changed.
+        var decalsPublished = false;
+        if (delta.DecalsChanged || (delta.ModsChanged && design.HasDecals))
+        {
+            if (_decals is null)
+            {
+                // Not transient: the feature could not start. Reported, not retried.
+                if (design.HasDecals)
+                    problems.Add("decals unavailable");
+                _store.DecalsHash = null;
+            }
+            else
+            {
+                var status = _collectionStatus();
+                if (status == CollectionStatus.Assigned && _collectionId() is { } collection && _penumbra.Available)
+                {
+                    if (design.HasDecals)
+                    {
+                        _decals.Publish(collection, index, design.Decals.Select(f => f.Value).ToList());
+                        _store.DecalsHash = DesignDiffer.DecalsHash(design);
+                        decalsPublished   = true;
+                    }
+                    else if (_store.DecalsApplied)
+                    {
+                        _decals.Clear(collection);
+                        _store.DecalsHash = null;
+                        redrawWanted      = true;
+                    }
+                }
+                else
+                {
+                    _log?.Invoke($"Decals skipped: collection status {status}.");
+                    _store.DecalsHash = null;
+                }
+            }
+        }
+
+        // (f) One redraw, only when mods actually changed in the collection.
         var redrawRequested = false;
         if (redrawWanted)
         {
@@ -274,7 +318,7 @@ public sealed class Applier
 
         var deferred = redrawRequested && _redraw.Pending && (snapshot.RedrawUnsafe || _config().RedrawPolicy == RedrawPolicy.Never);
         return new ApplyInfo(now, design.ContentHash, glamourerApplied, modsApplied, modsWritten, honorificApplied, moodlesApplied,
-            redrawRequested, deferred, problems);
+            decalsPublished, redrawRequested, deferred, problems);
     }
 
     /// <summary>

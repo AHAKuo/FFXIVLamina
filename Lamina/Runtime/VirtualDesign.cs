@@ -1,4 +1,5 @@
 using System.Numerics;
+using Lamina.Decals;
 using Lamina.Models;
 using Newtonsoft.Json.Linq;
 
@@ -150,11 +151,13 @@ public sealed class DesignDraft
     public Dictionary<string, ModContribution> Mods { get; } = new(StringComparer.OrdinalIgnoreCase);
     public Field<HonorificTitle>? Honorific { get; set; }
     public Dictionary<Guid, Field<MoodleOp>> Moodles { get; } = new();
+    /// <summary> Decals in bake order: earlier entries are painted first, later ones land on top. Not maskable, like Honorific and Moodles. </summary>
+    public List<Field<DecalSpec>> Decals { get; } = new();
 
     public bool IsEmpty
         => Items.Count == 0 && Stains.Count == 0 && Crests.Count == 0 && Bonus.Count == 0 && Customize.Count == 0
          && ModelId is null && Meta.Count == 0 && Parameters.Count == 0 && Materials.Count == 0 && Mods.Count == 0
-         && Honorific is null && Moodles.Count == 0;
+         && Honorific is null && Moodles.Count == 0 && Decals.Count == 0;
 
     /// <summary> Adds a mod contribution, merging per part when the mod is already present. </summary>
     public void AddMod(ModContribution contribution)
@@ -180,6 +183,8 @@ public sealed class DesignDraft
         foreach (var (_, v) in top.Mods) AddMod(v);
         if (top.Honorific is { } title) Honorific = title;
         foreach (var (k, v) in top.Moodles) Moodles[k] = v;
+        // Decals accumulate instead of replacing: a later pass paints its decals on top of the earlier ones.
+        Decals.AddRange(top.Decals);
     }
 
     /// <summary> Returns a copy with everything the mask does not allow removed. </summary>
@@ -204,9 +209,10 @@ public sealed class DesignDraft
         }
         if (mask.Mods)
             foreach (var (_, v) in Mods) result.AddMod(v);
-        // Honorific and Moodles are never masked (the mask only applies to Glamourer / Vitrine / Equipment / Appearance layers).
+        // Honorific, Moodles and decals are never masked (the mask only applies to Glamourer / Vitrine / Equipment / Appearance layers).
         if (Honorific is { } title) result.Honorific = title;
         foreach (var (k, v) in Moodles) result.Moodles[k] = v;
+        result.Decals.AddRange(Decals);
         return result;
     }
 
@@ -237,6 +243,7 @@ public sealed class VirtualDesign
         Mods                = draft.Mods.Where(kv => !kv.Value.IsEmpty).ToDictionary(kv => kv.Key, kv => kv.Value.Clone(), StringComparer.OrdinalIgnoreCase);
         Honorific           = draft.Honorific;
         Moodles             = new Dictionary<Guid, Field<MoodleOp>>(draft.Moodles);
+        Decals              = draft.Decals.ToList();
         ProfileId           = profileId;
         ActiveGroupId       = activeGroupId;
         ActiveFinalGroupIds = activeFinalGroupIds;
@@ -258,6 +265,8 @@ public sealed class VirtualDesign
     public IReadOnlyDictionary<string, ModContribution> Mods { get; }
     public Field<HonorificTitle>? Honorific { get; }
     public IReadOnlyDictionary<Guid, Field<MoodleOp>> Moodles { get; }
+    /// <summary> Decals in bake order (see <see cref="DesignDraft.Decals"/>). </summary>
+    public IReadOnlyList<Field<DecalSpec>> Decals { get; }
 
     // ---- metadata ----
     public Guid ProfileId { get; }
@@ -276,11 +285,17 @@ public sealed class VirtualDesign
     public bool HasMods
         => Mods.Count > 0;
 
+    public bool HasDecals
+        => Decals.Count > 0;
+
     public bool IsEmpty
-        => !HasGlamourerContent && !HasMods && Honorific is null && Moodles.Count == 0;
+        => !HasGlamourerContent && !HasMods && Honorific is null && Moodles.Count == 0 && !HasDecals;
 }
 
-/// <summary> Content hashing for VirtualDesign. Must ignore provenance and metadata and be order independent. </summary>
+/// <summary>
+/// Content hashing for VirtualDesign. Must ignore provenance and metadata and be order independent, except for decals, whose
+/// paint order is content.
+/// </summary>
 public static class DesignHasher
 {
     public static string Compute(VirtualDesign d)
@@ -300,6 +315,7 @@ public static class DesignHasher
         if (d.Honorific is { } h)
             sb.Append("H:").Append(h.Value.Clear).Append(',').Append(h.Value.Title).Append(',').Append(h.Value.IsPrefix).Append(',').Append(h.Value.Color).Append(',').Append(h.Value.Glow).Append(';');
         foreach (var (k, v) in d.Moodles.OrderBy(kv => kv.Key)) sb.Append("O:").Append(k).Append('=').Append(v.Value).Append(';');
+        foreach (var f in d.Decals) sb.Append("L:").Append(f.Value.ContentKey()).Append(';');
 
         var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sb.ToString()));
         return Convert.ToHexString(bytes, 0, 16);

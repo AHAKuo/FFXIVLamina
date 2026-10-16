@@ -1,3 +1,5 @@
+using System.Numerics;
+using Lamina.Decals;
 using Lamina.Models;
 using Lamina.Runtime;
 using Lamina.Runtime.Compose;
@@ -13,6 +15,8 @@ public sealed class EngineRig
     public FakePenumbraBridge Penumbra { get; } = new();
     public FakeHonorificBridge Honorific { get; } = new();
     public FakeMoodlesBridge Moodles { get; } = new();
+    /// <summary> Fake decal publisher; null when the rig was built without one (decal feature unavailable). </summary>
+    public FakeDecalPublisher? Decals { get; }
     public AppliedStateStore Store { get; } = new();
     public LaminaConfig Config { get; } = new();
     public Guid Collection { get; }
@@ -29,15 +33,17 @@ public sealed class EngineRig
     public EngineCore Core { get; }
     public Compose.FakeGlamourerBridge ComposeGlamourer { get; } = new();
 
-    public EngineRig()
+    /// <param name="decalPublisher"> False builds the rig without a decal publisher, as when the decal feature could not start. </param>
+    public EngineRig(bool decalPublisher = true)
     {
+        Decals     = decalPublisher ? new FakeDecalPublisher() : null;
         Collection = Penumbra.AddCollection("Lamina");
         Penumbra.ObjectCollections[0] = Collection;
 
         Redraw  = new RedrawScheduler(Penumbra, () => PlayerIndex, Log.Add);
-        Applier = new Applier(Glamourer, Penumbra, Honorific, Moodles, Store, Redraw, () => Config, () => Collection, () => Status,
+        Applier = new Applier(Glamourer, Penumbra, Honorific, Moodles, Decals, Store, Redraw, () => Config, () => Collection, () => Status,
             () => PlayerIndex, () => PlayerAddress, () => Now, Log.Add);
-        Cleanup = new CleanupService(Glamourer, Penumbra, Honorific, Moodles, Store, Redraw, Evaluator, () => Config, () => Collection,
+        Cleanup = new CleanupService(Glamourer, Penumbra, Honorific, Moodles, Decals, Store, Redraw, Evaluator, () => Config, () => Collection,
             () => PlayerIndex, () => PlayerAddress, () => Now, Log.Add);
 
         var resolver = Compose.Build.Resolver(ComposeGlamourer);
@@ -101,6 +107,12 @@ public static class Designs
 
     public static void Moodle(DesignDraft d, Guid id, MoodleOp op = MoodleOp.Add)
         => d.Moodles[id] = new Field<MoodleOp>(op, Src);
+
+    /// <summary> A decal at a fixed rest-pose spot; a different <paramref name="image"/>, <paramref name="opacity"/> or <paramref name="x"/> is a different decal. </summary>
+    public static void Decal(DesignDraft d, string image = "mark.png", DecalSurface surface = DecalSurface.Body, float opacity = 1f, float x = 0.1f)
+        => d.Decals.Add(new Field<DecalSpec>(
+            new DecalSpec(image, new DecalPlacement { Surface = surface, Position = new Vector3(x, 1f, 0.05f), Normal = Vector3.UnitZ, Size = 0.1f }, opacity),
+            Src));
 
     public static GameStateSnapshot Safe()
         => new() { Sequence = 1, LoggedIn = true };

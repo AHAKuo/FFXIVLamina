@@ -12,6 +12,7 @@ namespace Lamina.Runtime.Engine;
 /// <param name="ModsChanged"> The mod section differs. </param>
 /// <param name="HonorificChanged"> The title differs. </param>
 /// <param name="MoodlesChanged"> Something must be added or removed on Moodles. </param>
+/// <param name="DecalsChanged"> The decal list differs (or the design lost its decals). </param>
 /// <param name="MoodleAdds"> Moodles / presets to add now (ids not yet added by Lamina). </param>
 /// <param name="MoodleRemoves"> Moodles to remove now: previously added ones the design no longer wants plus explicit removes. </param>
 /// <param name="PresetRemoves"> Presets Lamina applied that the design no longer wants. </param>
@@ -22,16 +23,20 @@ public sealed record DesignDelta(
     bool ModsChanged,
     bool HonorificChanged,
     bool MoodlesChanged,
+    bool DecalsChanged,
     IReadOnlyList<(Guid Id, MoodleOp Op)> MoodleAdds,
     IReadOnlyList<Guid> MoodleRemoves,
     IReadOnlyList<Guid> PresetRemoves)
 {
-    /// <summary> Only Penumbra changes need a redraw (Glamourer, Honorific and Moodles apply live). </summary>
+    /// <summary>
+    /// Only Penumbra mod changes need a redraw here (Glamourer, Honorific and Moodles apply live). A decal change needs one
+    /// too, but only once its bake is in place: the engine requests that redraw when the publisher completes.
+    /// </summary>
     public bool RequiresRedraw
         => ModsChanged;
 
     /// <summary> A delta that does nothing. </summary>
-    public static readonly DesignDelta None = new(true, false, false, false, false, false,
+    public static readonly DesignDelta None = new(true, false, false, false, false, false, false,
         Array.Empty<(Guid, MoodleOp)>(), Array.Empty<Guid>(), Array.Empty<Guid>());
 }
 
@@ -52,10 +57,12 @@ public static class DesignDiffer
 
         var nextGlamourer = next.HasGlamourerContent ? GlamourerHash(next) : null;
         var nextMods      = next.HasMods ? ModsHash(next) : null;
+        var nextDecals    = next.HasDecals ? DecalsHash(next) : null;
 
         var glamourerChanged = force || nextGlamourer != applied.GlamourerHash;
         var modsChanged      = force || nextMods != applied.ModsHash;
         var honorificChanged = force || !HonorificEquals(applied.HonorificSet, next.Honorific?.Value);
+        var decalsChanged    = force || nextDecals != applied.DecalsHash;
 
         var wantedAdds = next.Moodles.Where(kv => kv.Value.Value != MoodleOp.Remove)
                              .Select(kv => (kv.Key, kv.Value.Value))
@@ -75,8 +82,8 @@ public static class DesignDiffer
         var presetRemoves = applied.PresetsApplied.Where(id => !wantedPresets.Contains(id)).ToList();
 
         var moodlesChanged = adds.Count > 0 || removes.Count > 0 || presetRemoves.Count > 0;
-        var noChange       = !glamourerChanged && !modsChanged && !honorificChanged && !moodlesChanged;
-        return new DesignDelta(noChange, force, glamourerChanged, modsChanged, honorificChanged, moodlesChanged, adds, removes, presetRemoves);
+        var noChange       = !glamourerChanged && !modsChanged && !honorificChanged && !moodlesChanged && !decalsChanged;
+        return new DesignDelta(noChange, force, glamourerChanged, modsChanged, honorificChanged, moodlesChanged, decalsChanged, adds, removes, presetRemoves);
     }
 
     /// <summary> Stable hash of everything that goes to Glamourer. </summary>
@@ -101,6 +108,16 @@ public static class DesignDiffer
         var sb = new StringBuilder(512);
         foreach (var (_, c) in d.Mods.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
             sb.Append("D:").Append(c.ContentKey()).Append(';');
+
+        return Hash(sb);
+    }
+
+    /// <summary> Stable hash of the decal list, order preserving: decals paint in order, so the same set in another order is another bake. </summary>
+    public static string DecalsHash(VirtualDesign d)
+    {
+        var sb = new StringBuilder(256);
+        foreach (var f in d.Decals)
+            sb.Append("L:").Append(f.Value.ContentKey()).Append(';');
 
         return Hash(sb);
     }
