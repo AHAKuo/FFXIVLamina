@@ -36,6 +36,12 @@ public sealed class LaminaConfig
 
     /// <summary> Set after the first-run collection prompt was shown. </summary>
     public bool FirstRunDone { get; set; }
+
+    /// <summary>
+    /// What a Glamourer field falls back to when no rule sets it any more: the plain game state (default) or Glamourer
+    /// automation. The full cleanup (master toggle off, unload, logout) reverts the same way. Absent in older config files = GameState.
+    /// </summary>
+    public NoRuleFallback NoRuleFallback { get; set; } = NoRuleFallback.GameState;
 }
 
 /// <summary> User overrides for the territory → biome mapping. Saved to biomes.json. </summary>

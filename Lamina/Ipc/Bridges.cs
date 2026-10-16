@@ -58,6 +58,9 @@ public interface IGlamourerBridge : IPluginBridge
 
     /// <summary> Raised when Glamourer finalizes a state on an actor (address, type). Used to re-assert after automation reapplies. </summary>
     event Action<nint, StateFinalizationType>? StateFinalized;
+
+    /// <summary> Unlocks Lamina's lock (if any) and reverts to the plain game state: what the game itself has equipped / customized. </summary>
+    GlamourerApiEc UnlockAndRevertToGame(int objectIndex);
 }
 
 public interface IPenumbraBridge : IPluginBridge

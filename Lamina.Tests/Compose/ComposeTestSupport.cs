@@ -85,6 +85,7 @@ public sealed class FakeGlamourerBridge : IGlamourerBridge
 
     public void RaiseAvailability() => AvailabilityChanged?.Invoke();
     public void RaiseFinalized(nint a, StateFinalizationType t) => StateFinalized?.Invoke(a, t);
+    public GlamourerApiEc UnlockAndRevertToGame(int objectIndex) => GlamourerApiEc.Success;
 }
 
 /// <summary> Builders for compact test setups. </summary>

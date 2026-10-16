@@ -12,6 +12,7 @@ public sealed partial class LaminaWindow
 {
     private static readonly string[] DirectionNames = { "Top to bottom (bottom wins)", "Bottom to top (top wins)" };
     private static readonly string[] RedrawNames    = { "Defer when unsafe", "Immediate", "Never (manual /lam redraw)" };
+    private static readonly string[] FallbackNames  = { "Game state", "Glamourer automation" };
 
     private void DrawSettingsTab()
     {
@@ -27,7 +28,7 @@ public sealed partial class LaminaWindow
             if (ImGui.Checkbox(enabled ? "Lamina is ON##master" : "Lamina is OFF##master", ref enabled))
                 _s.Engine.SetEnabled(enabled);
         }
-        Widgets.Tooltip("Off runs a full cleanup: Lamina's mod settings are removed, Glamourer is reverted to automation, the title and moodles Lamina set are removed.");
+        Widgets.Tooltip("Off runs a full cleanup: Lamina's mod settings are removed, Glamourer is reverted (to the game state or automation, see the Glamourer section), the title and moodles Lamina set are removed.");
         ImGui.SameLine();
         if (ImGui.Button("Reapply now"))
             _s.Engine.RequestReapply();
@@ -88,6 +89,18 @@ public sealed partial class LaminaWindow
             _s.Engine.Invalidate();
         }
         Widgets.Tooltip("Applies Lamina's state with a lock so Glamourer automation cannot override it. Glamourer has no API to turn automation off; if automation still breaks through, disable it for this character in Glamourer.");
+        var fallback = (int)cfg.NoRuleFallback;
+        ImGui.SetNextItemWidth(260 * Widgets.Scale);
+        if (ImGui.Combo("When no rule sets a field", ref fallback, FallbackNames, FallbackNames.Length))
+        {
+            cfg.NoRuleFallback = (NoRuleFallback)fallback;
+            ConfigChanged();
+            _s.Engine.RequestReapply();
+        }
+        Widgets.Tooltip("What a Glamourer field shows once no rule provides a value for it (a rule stopped matching, or nothing matches at all).\n"
+                      + "Game state: what the game itself has equipped / customized, as if Glamourer were not changing it.\n"
+                      + "Glamourer automation: whatever Glamourer's automation would show for this character.\n"
+                      + "Turning Lamina off, logging out and unloading the plugin revert the same way.");
         var assoc = cfg.ApplyGlamourerModAssociations;
         if (ImGui.Checkbox("Apply Glamourer design mod associations", ref assoc))
         {

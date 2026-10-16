@@ -19,6 +19,15 @@ public enum RedrawPolicy
     Never,
 }
 
+/// <summary> What a Glamourer field shows once no rule sets it any more. Also the revert the full cleanup uses. </summary>
+public enum NoRuleFallback
+{
+    /// <summary> Default. The plain game state: what the game itself has equipped / customized (Glamourer RevertState). </summary>
+    GameState,
+    /// <summary> Whatever Glamourer automation would show for the character (Glamourer RevertToAutomation). </summary>
+    Automation,
+}
+
 public enum TargetKind
 {
     LocalPlayer,

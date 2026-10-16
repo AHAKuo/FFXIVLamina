@@ -156,7 +156,7 @@ public class ReviewFixTests
         var step = rig.Core.Step(Designs.Safe(), b, false);
 
         Assert.True(step.ProfileSwitched);
-        Assert.Equal(new[] { "UnlockAndRevertToAutomation" }, rig.Glamourer.Calls.Select(c => c.Name));
+        Assert.Equal(new[] { "UnlockAndRevertToGame" }, rig.Glamourer.Calls.Select(c => c.Name));
         Assert.False(rig.Store.GlamourerApplied);
         Assert.True(rig.Store.ModsApplied);
     }

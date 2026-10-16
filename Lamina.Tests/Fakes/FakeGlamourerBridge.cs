@@ -110,4 +110,17 @@ public sealed class FakeGlamourerBridge : FakeBridgeBase, IGlamourerBridge, IGla
     /// <summary> Simulates Glamourer finalizing a state on an actor. </summary>
     public void RaiseStateFinalized(nint address, StateFinalizationType type)
         => StateFinalized?.Invoke(address, type);
+
+    /// <summary> Result returned by <see cref="UnlockAndRevertToGame"/>. </summary>
+    public GlamourerApiEc RevertToGameResult { get; set; } = GlamourerApiEc.Success;
+
+    public GlamourerApiEc UnlockAndRevertToGame(int objectIndex)
+    {
+        Record(nameof(UnlockAndRevertToGame), objectIndex);
+        if (!Available)
+            return GlamourerApiEc.UnknownError;
+
+        Applied.Remove(objectIndex);
+        return RevertToGameResult;
+    }
 }

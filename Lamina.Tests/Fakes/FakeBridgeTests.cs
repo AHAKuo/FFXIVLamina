@@ -106,6 +106,10 @@ public class FakeBridgeTests
         Assert.True(g.Applied[0].Locked);
         Assert.Equal(GlamourerApiEc.Success, g.UnlockAndRevertToAutomation(0));
         Assert.False(g.Applied.ContainsKey(0));
+        Assert.Equal(GlamourerApiEc.Success, g.ApplyState(design, 0, lockState: true));
+        Assert.Equal(GlamourerApiEc.Success, g.UnlockAndRevertToGame(0));
+        Assert.False(g.Applied.ContainsKey(0));
+        Assert.Single(g.CallsNamed("UnlockAndRevertToGame"));
 
         var received = new List<(nint, StateFinalizationType)>();
         g.StateFinalized += (a, t) => received.Add((a, t));

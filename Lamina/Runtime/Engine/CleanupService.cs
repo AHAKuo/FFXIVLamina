@@ -8,7 +8,7 @@ namespace Lamina.Runtime.Engine;
 
 /// <summary>
 /// Undoes only Lamina's own changes (TDD 7.2 Cleanup / Revert): removes Lamina's temporary Penumbra settings and its decal mod, unlocks and
-/// reverts the Glamourer state to automation, clears the Honorific title if Lamina set one, removes the Moodles and presets
+/// reverts the Glamourer state (to the game state or automation, per <see cref="LaminaConfig.NoRuleFallback"/>), clears the Honorific title if Lamina set one, removes the Moodles and presets
 /// Lamina applied, then asks for one redraw. Lamina never touches collection assignments: the player manages those in Penumbra.
 /// </summary>
 public sealed class CleanupService
@@ -105,11 +105,13 @@ public sealed class CleanupService
             decalsCleared = true;
         }
 
-        // 2. Glamourer: unlock and hand the character back to automation.
+        // 2. Glamourer: unlock and hand the character back to the game state or to automation, as configured (NoRuleFallback).
         var reverted = false;
         if (revertGlamourer && _store.GlamourerApplied && _glamourer.Available && index is { } glamIndex)
         {
-            var code = _glamourer.UnlockAndRevertToAutomation(glamIndex);
+            var code = config.NoRuleFallback == NoRuleFallback.Automation
+                ? _glamourer.UnlockAndRevertToAutomation(glamIndex)
+                : _glamourer.UnlockAndRevertToGame(glamIndex);
             reverted = code is GlamourerApiEc.Success or GlamourerApiEc.NothingDone;
             if (!reverted)
                 problems.Add($"Glamourer revert: {code}");

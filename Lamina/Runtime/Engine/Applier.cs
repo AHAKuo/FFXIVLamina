@@ -144,34 +144,63 @@ public sealed class Applier
             }
         }
 
-        // (b) Glamourer: one ApplyState with the merged, masked state.
+        // (b) Glamourer: one ApplyState with the merged, masked state. ApplyState leaves fields with Apply=false alone, so a
+        // field the previous design set and this one no longer sets would keep Lamina's old value: those are reverted first
+        // (to the game state or automation, per config), then the new state is applied in the same frame, which re-asserts
+        // the kept fields and re-establishes the lock. Fields only added or changed in value need no revert (no flash).
         var glamourerApplied = false;
         if (delta.GlamourerChanged && _glamourer.Available)
         {
+            var fallback = _config().NoRuleFallback;
             if (design.HasGlamourerContent)
             {
-                // The actor's current state supplies race / clan / gender when the design leaves them unset (see the builder).
-                var baseline = _glamourer.GetState(index).State;
-                var state    = GlamourerStateBuilder.Build(design, baseline);
-                var code  = _glamourer.ApplyState(state, index, _config().HoldGlamourerState);
-                if (code is GlamourerApiEc.Success or GlamourerApiEc.NothingDone)
+                var dropped  = _store.LastGlamourerDesign is { } previous ? DesignDiffer.DroppedGlamourerFields(previous, design) : Array.Empty<string>();
+                var reverted = true;
+                if (dropped.Count > 0)
                 {
-                    glamourerApplied     = true;
-                    _store.GlamourerHash = DesignDiffer.GlamourerHash(design);
+                    _log?.Invoke($"Glamourer: no rule sets {string.Join(", ", dropped)} any more; reverting to {fallback} before applying.");
+                    var revert = RevertGlamourer(index, fallback);
+                    if (revert is not GlamourerApiEc.Success and not GlamourerApiEc.NothingDone)
+                    {
+                        // The state and LastGlamourerDesign stay as they were, so the next evaluation retries the revert.
+                        problems.Add($"Glamourer revert failed: {revert}");
+                        complete = reverted = false;
+                    }
                 }
-                else
+
+                if (reverted)
                 {
-                    problems.Add($"Glamourer ApplyState failed: {code}");
-                    complete = false;
+                    // The actor's current state supplies race / clan / gender when the design leaves them unset (see the builder).
+                    var baseline = _glamourer.GetState(index).State;
+                    var state    = GlamourerStateBuilder.Build(design, baseline);
+                    var code     = _glamourer.ApplyState(state, index, _config().HoldGlamourerState);
+                    if (code is GlamourerApiEc.Success or GlamourerApiEc.NothingDone)
+                    {
+                        glamourerApplied           = true;
+                        _store.GlamourerHash       = DesignDiffer.GlamourerHash(design);
+                        _store.LastGlamourerDesign = design;
+                    }
+                    else
+                    {
+                        problems.Add($"Glamourer ApplyState failed: {code}");
+                        complete = false;
+                        if (dropped.Count > 0)
+                        {
+                            // The revert went through, so Lamina no longer holds the dropped fields; the retry must not revert again.
+                            _store.GlamourerHash       = null;
+                            _store.LastGlamourerDesign = null;
+                        }
+                    }
                 }
             }
             else if (_store.GlamourerApplied)
             {
-                var code = _glamourer.UnlockAndRevertToAutomation(index);
+                var code = RevertGlamourer(index, fallback);
                 if (code is GlamourerApiEc.Success or GlamourerApiEc.NothingDone)
                 {
-                    glamourerApplied     = true;
-                    _store.GlamourerHash = null;
+                    glamourerApplied           = true;
+                    _store.GlamourerHash       = null;
+                    _store.LastGlamourerDesign = null;
                 }
                 else
                 {
@@ -320,6 +349,12 @@ public sealed class Applier
         return new ApplyInfo(now, design.ContentHash, glamourerApplied, modsApplied, modsWritten, honorificApplied, moodlesApplied,
             decalsPublished, redrawRequested, deferred, problems);
     }
+
+    /// <summary> Unlocks and reverts the actor's Glamourer state to the configured fallback (TDD: fall back to the game state when no rule applies). </summary>
+    private GlamourerApiEc RevertGlamourer(int index, NoRuleFallback fallback)
+        => fallback == NoRuleFallback.Automation
+            ? _glamourer.UnlockAndRevertToAutomation(index)
+            : _glamourer.UnlockAndRevertToGame(index);
 
     /// <summary>
     /// Completes a contribution with the parts it inherits (TDD 5.7): the mod's permanent settings in the collection

@@ -90,7 +90,7 @@ public class ApplierTests
     }
 
     [Fact]
-    public void Glamourer_RevertsToAutomation_WhenDesignLosesContent()
+    public void Glamourer_RevertsToGameState_WhenDesignLosesContent()
     {
         var rig    = new EngineRig();
         var design = Designs.Of(d => Designs.Head(d, 42));
@@ -99,9 +99,12 @@ public class ApplierTests
         var empty = Designs.Empty();
         var info  = rig.Applier.Apply(empty, Full(empty, rig.Store), Designs.Safe());
 
-        Assert.Single(rig.Glamourer.CallsNamed("UnlockAndRevertToAutomation"));
+        // Default fallback: the plain game state, never automation.
+        Assert.Single(rig.Glamourer.CallsNamed("UnlockAndRevertToGame"));
+        Assert.Empty(rig.Glamourer.CallsNamed("UnlockAndRevertToAutomation"));
         Assert.True(info.GlamourerApplied);
         Assert.False(rig.Store.GlamourerApplied);
+        Assert.Null(rig.Store.LastGlamourerDesign);
     }
 
     [Fact]

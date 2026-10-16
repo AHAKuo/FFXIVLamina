@@ -122,6 +122,36 @@ public static class DesignDiffer
         return Hash(sb);
     }
 
+    /// <summary>
+    /// Names of the Glamourer fields <paramref name="previous"/> set that <paramref name="next"/> no longer sets (keys only;
+    /// a changed value is not a drop). Such fields would keep Lamina's old value on the character unless reverted first,
+    /// because ApplyState leaves fields with Apply=false alone.
+    /// </summary>
+    public static IReadOnlyList<string> DroppedGlamourerFields(VirtualDesign previous, VirtualDesign next)
+    {
+        var dropped = new List<string>();
+        Add(dropped, "Item", previous.Items.Keys, next.Items.Keys);
+        Add(dropped, "Stain", previous.Stains.Keys, next.Stains.Keys);
+        Add(dropped, "Crest", previous.Crests.Keys, next.Crests.Keys);
+        Add(dropped, "Bonus", previous.Bonus.Keys, next.Bonus.Keys);
+        Add(dropped, "Customize", previous.Customize.Keys, next.Customize.Keys);
+        if (previous.ModelId is not null && next.ModelId is null)
+            dropped.Add("ModelId");
+        Add(dropped, "Meta", previous.Meta.Keys, next.Meta.Keys);
+        Add(dropped, "Parameter", previous.Parameters.Keys, next.Parameters.Keys);
+        Add(dropped, "Material", previous.Materials.Keys, next.Materials.Keys);
+        return dropped;
+
+        static void Add<TKey>(List<string> into, string section, IEnumerable<TKey> before, IEnumerable<TKey> after)
+            where TKey : notnull
+        {
+            var kept = after.ToHashSet();
+            foreach (var key in before)
+                if (!kept.Contains(key))
+                    into.Add($"{section}.{key}");
+        }
+    }
+
     private static bool HonorificEquals(HonorificTitle? a, HonorificTitle? b)
     {
         if (a is null || b is null)

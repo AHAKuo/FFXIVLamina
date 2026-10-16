@@ -79,5 +79,14 @@ public sealed class AppliedStateStore
         MoodlesAdded.Clear();
         PresetsApplied.Clear();
         LastApplyUtc = null;
+        if (!keepGlamourer)
+            LastGlamourerDesign = null;
     }
+
+    /// <summary>
+    /// The design whose Glamourer section Lamina last pushed successfully through ApplyState, so the next apply can tell which
+    /// fields it no longer sets and revert those first. Null while Lamina holds no Glamourer state; survives a profile switch
+    /// together with <see cref="GlamourerHash"/>, so fields the new profile drops still fall back.
+    /// </summary>
+    public VirtualDesign? LastGlamourerDesign { get; set; }
 }

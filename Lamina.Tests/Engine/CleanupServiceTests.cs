@@ -43,7 +43,8 @@ public class CleanupServiceTests
         Assert.True(result.ModsCleared);
         Assert.Empty(rig.Penumbra.TempSettingsIn(rig.Collection));
         Assert.True(result.GlamourerReverted);
-        Assert.Single(rig.Glamourer.CallsNamed("UnlockAndRevertToAutomation"));
+        Assert.Single(rig.Glamourer.CallsNamed("UnlockAndRevertToGame"));
+        Assert.Empty(rig.Glamourer.CallsNamed("UnlockAndRevertToAutomation"));
         Assert.True(result.HonorificCleared);
         Assert.False(rig.Honorific.Titles.ContainsKey(0));
         Assert.Equal(1, result.MoodlesRemoved);

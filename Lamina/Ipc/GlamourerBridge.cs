@@ -64,8 +64,9 @@ public sealed class GlamourerBridge : BridgeBase, IGlamourerBridge, IGlamourerUn
         _unlockState        = new UnlockState(pi);
         _revertToAutomation = new RevertToAutomation(pi);
         _setItem            = new SetItem(pi);
+        _revertState        = new RevertState(pi);
 
-        _stateFinalized = Glamourer.Api.IpcSubscribers.StateFinalized.Subscriber(pi, OnStateFinalized);
+        _stateFinalized =Glamourer.Api.IpcSubscribers.StateFinalized.Subscriber(pi, OnStateFinalized);
         try
         {
             _stateFinalizedAlt = pi.GetIpcSubscriber<nint, StateFinalizationType, object?>(StateFinalizedAltLabel);
@@ -152,6 +153,20 @@ public sealed class GlamourerBridge : BridgeBase, IGlamourerBridge, IGlamourerUn
 
     private void OnStateFinalized(nint address, StateFinalizationType type)
         => Dispatch(() => StateFinalized?.Invoke(address, type), nameof(StateFinalized));
+
+    private readonly RevertState _revertState;
+
+    /// <inheritdoc/>
+    /// <remarks> Same shape as <see cref="UnlockAndRevertToAutomation"/>, but the revert target is the game's own state, not automation. </remarks>
+    public GlamourerApiEc UnlockAndRevertToGame(int objectIndex)
+    {
+        var unlock = Unlock(objectIndex);
+        if (unlock is not GlamourerApiEc.Success and not GlamourerApiEc.NothingDone)
+            Log.Debug($"[Glamourer] UnlockState on {objectIndex} returned {unlock}; attempting revert anyway.");
+
+        // After unlocking, the state carries no key, so the revert uses key 0.
+        return Call(() => _revertState.Invoke(objectIndex, 0, ApplyFlagEx.RevertDefault), GlamourerApiEc.UnknownError, nameof(RevertState));
+    }
 
     /// <inheritdoc/>
     protected override void DisposeCore()

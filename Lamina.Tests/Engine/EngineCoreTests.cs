@@ -106,7 +106,7 @@ public class EngineCoreTests
         Assert.Null(step.Profile);
         Assert.True(step.Design.IsEmpty);
         Assert.False(rig.Store.GlamourerApplied);
-        Assert.Contains(rig.Glamourer.Calls, c => c.Name == "UnlockAndRevertToAutomation");
+        Assert.Contains(rig.Glamourer.Calls, c => c.Name == "UnlockAndRevertToGame");
     }
 
     [Fact]
