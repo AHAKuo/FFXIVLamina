@@ -205,6 +205,22 @@ matches, and its layers stack on top of the parent's.
 - [ ] UI: sub-passes shown indented under the parent in the Passes tab (add / reorder / move out to a top-level pass);
       the debug overlay shows parent → sub-pass; "Add sub-pass" on a pass.
 
+## K) Customize+ and Simple Heels layer types
+Two more optional-plugin layers, same shape as Honorific / Moodles: an IPC bridge with availability tracking, the layer
+greyed out in Add Layer when the plugin is missing, existing layers skipped with "plugin missing", cleanup on toggle off /
+unload / logout / profile switch. Both plugins are vendored as submodules (`CustomizePlus/`, `SimpleHeels/`) for the IPC
+contracts; confirm the exact IPC names and payloads against that source before writing the bridges.
+- [ ] **Customize+ layer** (`kind: "CustomizePlus"`): pick a Customize+ profile by name / id (listed through the Customize+
+      IPC); the layer applies it to the player as a temporary profile and removes it on cleanup; later passes override earlier
+      ones; Macro Override masks apply; Preview and `/lam why` name the profile.
+- [ ] **Simple Heels layer** (`kind: "SimpleHeels"`): height offset (and the sitting / ground-sit offsets if the IPC exposes
+      them) applied to the player through the Simple Heels IPC and cleared on cleanup; later passes override earlier ones;
+      Macro Override masks apply; Preview and `/lam why` name the layer.
+- [ ] Bridges `ICustomizePlusBridge` / `ISimpleHeelsBridge` with fakes, availability tracking, JSON kinds, models, Add Layer
+      entries, tests for cascade order, masks and cleanup.
+- [ ] Verify in game: the temporary Customize+ profile shows and clears; the heel offset shows and clears; neither plugin's own
+      automation fights Lamina (document like the Glamourer note in section A if it does).
+
 ## Later (TDD section 14)
 - [ ] Moodles presets: expand to statuses so cleanup can remove them (needs preset-info IPC in the bridge).
 - [ ] Other targets (characters / players).
