@@ -43,6 +43,12 @@ internal sealed class LayerEditor
 
     // ---- layer list ---------------------------------------------------------------------------------
 
+    /// <summary> Shown on the Decal entry of the Add Layer menu and on every decal card. </summary>
+    private const string DecalExperimentalWarning =
+        "Experimental / work in progress: decals do not work every time and may not apply on every body. "
+        + "A click must land on true skin, mirrored-UV bodies show the decal on both sides, and some outfits or body mods "
+        + "replace the skin texture in ways the bake cannot follow. If a decal is missing after a change, try /lam reapply.";
+
     /// <summary> Icons of the per-layer header buttons, left to right. Their measured widths size the right-aligned block. </summary>
     private static readonly FontAwesomeIcon[] HeaderButtons =
     {
@@ -117,6 +123,8 @@ internal sealed class LayerEditor
                     }
                     if (!available)
                         Widgets.Tooltip(why);
+                    else if (kind == DecalLayer.KindName)
+                        Widgets.Tooltip(DecalExperimentalWarning);
                 }
         }
 
@@ -1579,6 +1587,11 @@ internal sealed class LayerEditor
     {
         var changed = false;
         var scale   = Widgets.Scale;
+
+        Widgets.Badge("experimental", Widgets.Warn, DecalExperimentalWarning);
+        ImGui.SameLine();
+        Widgets.Hint("work in progress: may not work on every body (hover for details)");
+        Widgets.Tooltip(DecalExperimentalWarning);
 
         // Image: 64 px thumbnail, the picker and the file name.
         var box      = 64f * scale;
