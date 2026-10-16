@@ -28,6 +28,9 @@ public sealed partial class LaminaWindow
     private string _saveDesignName = string.Empty;
     private bool _saveDesignIncludeMods = true;
 
+    /// <summary> Routes the layer editor's copy / paste / move feedback into the status line; created once. </summary>
+    private Action<string, Vector4>? _layerStatus;
+
     private void DrawPassesTab()
     {
         var profile = EditProfile;
@@ -384,7 +387,7 @@ public sealed partial class LaminaWindow
         ImGui.Spacing();
         if (ImGui.CollapsingHeader("Layers", ImGuiTreeNodeFlags.DefaultOpen))
         {
-            if (_layers.Draw(profile, pass))
+            if (_layers.Draw(profile, pass, _layerStatus ??= (text, color) => SetStatus(text, color)))
                 _s.Engine.Invalidate();
         }
 

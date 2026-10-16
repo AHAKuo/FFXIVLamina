@@ -422,6 +422,41 @@ public sealed class ProfileStore
         return true;
     }
 
+    /// <summary> Inserts a deep copy (fresh id) right after the original. Returns null when the layer is not in the pass. </summary>
+    public Layer? DuplicateLayer(Profile profile, Pass pass, Guid layerId)
+    {
+        var index = pass.Layers.FindIndex(l => l.Id == layerId);
+        if (index < 0)
+            return null;
+        var copy = Cloner.CloneWithFreshIds(pass.Layers[index]);
+        pass.Layers.Insert(index + 1, copy);
+        Touch(profile);
+        return copy;
+    }
+
+    /// <summary> Appends a deep copy (fresh id) of a layer to another (or the same) pass. </summary>
+    public Layer CopyLayerTo(Layer layer, Profile targetProfile, Pass targetPass)
+    {
+        var copy = Cloner.CloneWithFreshIds(layer);
+        targetPass.Layers.Add(copy);
+        Touch(targetProfile);
+        return copy;
+    }
+
+    /// <summary>
+    /// Moves a layer (same id) to the end of another pass, possibly in another profile. Returns false when both passes are
+    /// the same or the layer is not in <paramref name="sourcePass"/>.
+    /// </summary>
+    public bool MoveLayerTo(Profile sourceProfile, Pass sourcePass, Layer layer, Profile targetProfile, Pass targetPass)
+    {
+        if (ReferenceEquals(sourcePass, targetPass) || !sourcePass.Layers.Remove(layer))
+            return false;
+        targetPass.Layers.Add(layer);
+        MarkDirty(sourceProfile);
+        Touch(targetProfile);
+        return true;
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------

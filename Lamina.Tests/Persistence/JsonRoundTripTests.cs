@@ -368,4 +368,23 @@ public class JsonRoundTripTests
         var reloaded = JsonSettings.Deserialize<Profile>("""{ "name": "X", "targets": [ { "kind": "LocalPlayer" } ] }""");
         Assert.Single(reloaded.Targets);
     }
+
+    [Fact]
+    public void LayerCollapsed_RoundTrips_AndDefaultsToExpanded()
+    {
+        var layer = new GlamourerLayer { DesignId = Guid.NewGuid(), Collapsed = true };
+        var obj   = JObject.Parse(JsonSettings.Serialize(layer));
+        Assert.True(obj["collapsed"]!.Value<bool>());
+        Assert.True(JsonSettings.Deserialize<Layer>(obj.ToString()).Collapsed);
+
+        // Files written before the field existed read as expanded.
+        var legacy = JsonSettings.Deserialize<Layer>("""{ "kind": "Glamourer", "designId": "00000000-0000-0000-0000-000000000001" }""");
+        Assert.False(legacy.Collapsed);
+
+        var profile = Fixtures.FullProfile();
+        profile.PassGroups[0].Passes[0].Layers[1].Collapsed = true;
+        var reloaded = JsonSettings.Deserialize<Profile>(JsonSettings.Serialize(profile));
+        Assert.False(reloaded.PassGroups[0].Passes[0].Layers[0].Collapsed);
+        Assert.True(reloaded.PassGroups[0].Passes[0].Layers[1].Collapsed);
+    }
 }

@@ -11,9 +11,10 @@ public enum TransferKind
     Profile,
     PassGroup,
     Pass,
+    Layer,
 }
 
-/// <summary> Result of an import: exactly one of <see cref="Profile"/>, <see cref="Group"/>, <see cref="Pass"/> is set. </summary>
+/// <summary> Result of an import: exactly one of <see cref="Profile"/>, <see cref="Group"/>, <see cref="Pass"/>, <see cref="Layer"/> is set. </summary>
 public sealed class ImportResult
 {
     internal ImportResult(TransferKind kind, object item, IReadOnlyList<string> warnings)
@@ -41,6 +42,10 @@ public sealed class ImportResult
     public Pass? Pass
         => Item as Pass;
 
+    /// <summary> Set when <see cref="Kind"/> is Layer (only from <see cref="ProfileTransfer.ImportLayer"/>). </summary>
+    public Layer? Layer
+        => Item as Layer;
+
     /// <summary> Missing references and unsupported kinds found in the import. The object still imported. </summary>
     public IReadOnlyList<string> Warnings { get; }
 }
@@ -56,12 +61,16 @@ public sealed record ReferenceResolvers(
 
 /// <summary>
 /// Export a profile, group or pass as pretty JSON or as a <c>LAMINA1:</c> prefixed base64 clipboard string, and import either.
-/// Imports get fresh ids and targets reset to the local player (TDD 10.4).
+/// Imports get fresh ids and targets reset to the local player (TDD 10.4). A single layer uses the <c>LAMINALAYER1:</c>
+/// prefix and its own <see cref="ImportLayer"/>, so the Profiles tab importer can tell the user where it belongs.
 /// </summary>
 public static class ProfileTransfer
 {
-    /// <summary> Prefix of the clipboard format. </summary>
+    /// <summary> Prefix of the clipboard format for profiles, groups and passes. </summary>
     public const string ClipboardPrefix = "LAMINA1:";
+
+    /// <summary> Prefix of the clipboard format for a single layer. </summary>
+    public const string LayerClipboardPrefix = "LAMINALAYER1:";
 
     // ---- export ----
 
@@ -89,6 +98,14 @@ public static class ProfileTransfer
     public static string ExportClipboard(Pass pass)
         => ToClipboard(ExportJson(pass));
 
+    /// <summary> Pretty JSON of one layer (the same object as inside a pass's "layers"). </summary>
+    public static string ExportJson(Layer layer)
+        => JsonSettings.Serialize(layer);
+
+    /// <summary> Clipboard string of one layer: <c>LAMINALAYER1:</c> + base64 of the UTF-8 JSON. </summary>
+    public static string ExportClipboard(Layer layer)
+        => LayerClipboardPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(ExportJson(layer)));
+
     /// <summary> Wraps JSON into the clipboard format. </summary>
     public static string ToClipboard(string json)
         => ClipboardPrefix + Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
@@ -97,22 +114,16 @@ public static class ProfileTransfer
 
     /// <summary>
     /// Imports JSON or a clipboard string. The kind is detected from the content: a profile has "passGroups",
-    /// a group has "passes", a pass has "layers". Throws <see cref="FormatException"/> on unrecognizable input.
+    /// a group has "passes", a pass has "layers". Throws <see cref="FormatException"/> on unrecognizable input, and on a
+    /// single layer (see <see cref="ImportLayer"/>) with a message that says where to paste it instead.
     /// </summary>
     public static ImportResult Import(string text, ReferenceResolvers? resolvers = null)
     {
-        var json = Unwrap(text);
-        JObject obj;
-        try
-        {
-            obj = JObject.Parse(json);
-        }
-        catch (JsonException ex)
-        {
-            throw new FormatException($"Not valid Lamina JSON: {ex.Message}", ex);
-        }
-
+        var obj  = Parse(text);
         var kind = DetectKind(obj) ?? throw new FormatException("JSON is not a Lamina profile, pass group or pass.");
+        if (kind == TransferKind.Layer)
+            throw new FormatException("This is a single layer. Paste it into a pass with the layer list's \"Paste layer\" button.");
+
         var warnings = new List<string>();
         resolvers ??= new ReferenceResolvers();
 
@@ -143,14 +154,35 @@ public static class ProfileTransfer
         }
     }
 
-    /// <summary> True when the text looks like something <see cref="Import"/> can take. Cheap check for paste buttons. </summary>
+    /// <summary>
+    /// Imports one layer from its JSON or <c>LAMINALAYER1:</c> clipboard string (a <c>LAMINA1:</c> string is unwrapped too,
+    /// in case the JSON inside is a layer). The layer gets a fresh id; broken references are reported like a pass import.
+    /// Throws <see cref="FormatException"/> when the content is not a layer.
+    /// </summary>
+    public static ImportResult ImportLayer(string text, ReferenceResolvers? resolvers = null)
+    {
+        var obj = Parse(text);
+        if (DetectKind(obj) != TransferKind.Layer)
+            throw new FormatException("JSON is not a Lamina layer.");
+
+        var layer    = Cloner.CloneWithFreshIds(JsonSettings.ToObject<Layer>(obj));
+        var warnings = new List<string>();
+        Check(layer, "Layer", resolvers ?? new ReferenceResolvers(), warnings);
+        return new ImportResult(TransferKind.Layer, layer, warnings);
+    }
+
+    /// <summary> True when the text looks like something <see cref="Import"/> or <see cref="ImportLayer"/> can take. Cheap check for paste buttons. </summary>
     public static bool LooksImportable(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return false;
         var trimmed = text.Trim();
-        return trimmed.StartsWith(ClipboardPrefix, StringComparison.Ordinal) || trimmed.StartsWith('{');
+        return trimmed.StartsWith(ClipboardPrefix, StringComparison.Ordinal) || LooksLikeLayer(trimmed) || trimmed.StartsWith('{');
     }
+
+    /// <summary> True when the text is a <c>LAMINALAYER1:</c> clipboard string. Raw layer JSON is only recognized by <see cref="ImportLayer"/>. </summary>
+    public static bool LooksLikeLayer(string? text)
+        => !string.IsNullOrWhiteSpace(text) && text.TrimStart().StartsWith(LayerClipboardPrefix, StringComparison.Ordinal);
 
     /// <summary> Reference warnings for an existing group (used by the UI's broken link badges). </summary>
     public static IReadOnlyList<string> CheckReferences(PassGroup group, ReferenceResolvers resolvers)
@@ -168,14 +200,38 @@ public static class ProfileTransfer
         return warnings;
     }
 
+    /// <summary> Reference warnings for one layer, worded like the pass import ("Layer: …"). </summary>
+    public static IReadOnlyList<string> CheckReferences(Layer layer, ReferenceResolvers resolvers)
+    {
+        var warnings = new List<string>();
+        Check(layer, "Layer", resolvers, warnings);
+        return warnings;
+    }
+
+    private static JObject Parse(string text)
+    {
+        var json = Unwrap(text);
+        try
+        {
+            return JObject.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            throw new FormatException($"Not valid Lamina JSON: {ex.Message}", ex);
+        }
+    }
+
     private static string Unwrap(string text)
     {
         var trimmed = text.Trim();
-        if (!trimmed.StartsWith(ClipboardPrefix, StringComparison.Ordinal))
+        var prefix  = trimmed.StartsWith(ClipboardPrefix, StringComparison.Ordinal) ? ClipboardPrefix
+                    : trimmed.StartsWith(LayerClipboardPrefix, StringComparison.Ordinal) ? LayerClipboardPrefix
+                    : null;
+        if (prefix is null)
             return trimmed;
         try
         {
-            return Encoding.UTF8.GetString(Convert.FromBase64String(trimmed[ClipboardPrefix.Length..].Trim()));
+            return Encoding.UTF8.GetString(Convert.FromBase64String(trimmed[prefix.Length..].Trim()));
         }
         catch (FormatException ex)
         {
@@ -183,6 +239,7 @@ public static class ProfileTransfer
         }
     }
 
+    /// <summary> Profile, group and pass are told apart by their collection properties; a layer is the only one that carries a top-level "kind". </summary>
     private static TransferKind? DetectKind(JObject obj)
     {
         if (Has(obj, "passGroups") || Has(obj, "targets"))
@@ -191,6 +248,8 @@ public static class ProfileTransfer
             return TransferKind.PassGroup;
         if (Has(obj, "layers") || Has(obj, "macroOverride"))
             return TransferKind.Pass;
+        if (Has(obj, KindConverter<Layer>.KindProperty))
+            return TransferKind.Layer;
         return null;
     }
 
@@ -208,23 +267,26 @@ public static class ProfileTransfer
     {
         CheckConditions(pass.Conditions, $"pass '{pass.Name}'", warnings);
         foreach (var layer in pass.Layers)
+            Check(layer, $"Pass '{pass.Name}'", resolvers, warnings);
+    }
+
+    private static void Check(Layer layer, string owner, ReferenceResolvers resolvers, List<string> warnings)
+    {
+        switch (layer)
         {
-            switch (layer)
-            {
-                case GlamourerLayer g when resolvers.GlamourerDesignExists is { } exists && !exists(g.DesignId):
-                    warnings.Add($"Pass '{pass.Name}': Glamourer design {g.DesignId} was not found.");
-                    break;
-                case VitrineDesignLayer v when resolvers.VitrineDesignExists is { } exists && !exists(v.VitrineDesignId):
-                    warnings.Add($"Pass '{pass.Name}': Vitrine design {v.VitrineDesignId} was not found.");
-                    break;
-                case PenumbraAdjustLayer p when resolvers.ModExists is { } exists:
-                    foreach (var mod in p.Mods.Where(m => !exists(m.ModDirectory)))
-                        warnings.Add($"Pass '{pass.Name}': mod '{mod.ModName ?? mod.ModDirectory}' ({mod.ModDirectory}) was not found.");
-                    break;
-                case UnknownLayer u:
-                    warnings.Add($"Pass '{pass.Name}': layer kind '{u.UnknownKind}' is not supported by this version.");
-                    break;
-            }
+            case GlamourerLayer g when resolvers.GlamourerDesignExists is { } exists && !exists(g.DesignId):
+                warnings.Add($"{owner}: Glamourer design {g.DesignId} was not found.");
+                break;
+            case VitrineDesignLayer v when resolvers.VitrineDesignExists is { } exists && !exists(v.VitrineDesignId):
+                warnings.Add($"{owner}: Vitrine design {v.VitrineDesignId} was not found.");
+                break;
+            case PenumbraAdjustLayer p when resolvers.ModExists is { } exists:
+                foreach (var mod in p.Mods.Where(m => !exists(m.ModDirectory)))
+                    warnings.Add($"{owner}: mod '{mod.ModName ?? mod.ModDirectory}' ({mod.ModDirectory}) was not found.");
+                break;
+            case UnknownLayer u:
+                warnings.Add($"{owner}: layer kind '{u.UnknownKind}' is not supported by this version.");
+                break;
         }
     }
 

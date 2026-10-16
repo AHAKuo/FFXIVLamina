@@ -1,5 +1,6 @@
 using Lamina.Models;
 using Lamina.Persistence;
+using Newtonsoft.Json.Linq;
 using Xunit;
 
 namespace Lamina.Tests.Persistence;
@@ -165,6 +166,91 @@ public class ProfileStoreTests
         Assert.Empty(a.Passes);
         Assert.True(store.RemoveGroup(profile, c.Id));
         Assert.False(store.RemoveGroup(profile, c.Id));
+    }
+
+    [Fact]
+    public void DuplicateLayer_InsertsAfterOriginal_WithFreshId_AndEqualContent()
+    {
+        using var dir = new TempDir();
+        var (store, _, _, _) = Create(dir.Path);
+        store.Load();
+        var profile = store.Profiles[0];
+        var pass    = store.AddPass(profile, profile.PassGroups[0]);
+        foreach (var layer in Fixtures.AllLayers())
+            store.AddLayer(profile, pass, layer);
+        var count    = pass.Layers.Count;
+        var original = pass.Layers[2];
+        original.Collapsed = true;
+        store.SaveNow();
+        var changed = 0;
+        store.Changed += () => changed++;
+
+        var copy = store.DuplicateLayer(profile, pass, original.Id);
+
+        Assert.NotNull(copy);
+        Assert.Equal(1, changed);
+        Assert.True(store.HasPendingSaves);
+        Assert.Equal(count + 1, pass.Layers.Count);
+        Assert.Same(original, pass.Layers[2]);
+        Assert.Same(copy, pass.Layers[3]);
+        Assert.NotEqual(original.Id, copy!.Id);
+        Assert.Equal(WithoutId(original), WithoutId(copy));
+        Assert.True(copy.Collapsed);
+        Assert.Null(store.DuplicateLayer(profile, pass, Guid.NewGuid()));
+    }
+
+    [Fact]
+    public void CopyLayerTo_AndMoveLayerTo_AcrossProfiles()
+    {
+        using var dir = new TempDir();
+        var (store, json, _, _) = Create(dir.Path);
+        store.Load();
+        var source     = store.Profiles[0];
+        var sourcePass = store.AddPass(source, source.PassGroups[0], "Src");
+        var target     = store.CreateProfile("Target");
+        var targetPass = store.AddPass(target, target.PassGroups[0], "Dst");
+        var layer      = new GlamourerLayer { DesignId = Guid.NewGuid(), Enabled = false };
+        var other      = new HonorificLayer { Title = "Stay" };
+        store.AddLayer(source, sourcePass, layer);
+        store.AddLayer(source, sourcePass, other);
+        store.SaveNow();
+        var saved = new List<string>();
+        store.Saved += saved.Add;
+
+        // Copy: fresh id, same content, only the target profile is written.
+        var copy = store.CopyLayerTo(layer, target, targetPass);
+        Assert.NotSame(layer, copy);
+        Assert.NotEqual(layer.Id, copy.Id);
+        Assert.Equal(WithoutId(layer), WithoutId(copy));
+        Assert.Contains(layer, sourcePass.Layers);
+        Assert.Same(copy, Assert.Single(targetPass.Layers));
+        store.SaveNow();
+        Assert.Single(saved);
+        saved.Clear();
+
+        // Refused: same pass, or a layer that is not in the source pass. Nothing is written.
+        Assert.False(store.MoveLayerTo(source, sourcePass, layer, source, sourcePass));
+        Assert.False(store.MoveLayerTo(source, sourcePass, copy, target, targetPass));
+        store.SaveNow();
+        Assert.Empty(saved);
+
+        // Move: same id, removed from the source, appended to the target, both profiles written.
+        Assert.True(store.MoveLayerTo(source, sourcePass, layer, target, targetPass));
+        Assert.Equal(new Layer[] { other }, sourcePass.Layers);
+        Assert.Equal(new Layer[] { copy, layer }, targetPass.Layers);
+        Assert.Same(target, store.ProfileOf(targetPass));
+        store.SaveNow();
+        Assert.Equal(2, saved.Count);
+        Assert.DoesNotContain(layer.Id.ToString(), File.ReadAllText(json.ProfilePath(source.Id)));
+        Assert.Contains(layer.Id.ToString(), File.ReadAllText(json.ProfilePath(target.Id)));
+    }
+
+    /// <summary> A layer's JSON without its id, for content comparisons between an original and its copy. </summary>
+    private static string WithoutId(Layer layer)
+    {
+        var obj = JObject.Parse(JsonSettings.Serialize(layer));
+        obj.Remove("id");
+        return obj.ToString();
     }
 
     [Fact]
@@ -339,6 +425,74 @@ public class ProfileTransferTests
         Assert.Contains(result.Warnings, w => w.Contains("Teleport"));
 
         Assert.Empty(ProfileTransfer.Import(ProfileTransfer.ExportJson(pass)).Warnings.Where(w => w.Contains("design")));
+    }
+
+    [Fact]
+    public void Layer_ExportImport_RoundTrips_WithFreshId_AndWarnings()
+    {
+        var layer = new PenumbraAdjustLayer
+        {
+            Enabled   = false,
+            Collapsed = true,
+            Mods      = { new ModState { ModDirectory = "Missing Mod", ModName = "Missing" }, new ModState { ModDirectory = "Present", State = ModToggle.Enable } },
+        };
+        var clip = ProfileTransfer.ExportClipboard(layer);
+        var json = ProfileTransfer.ExportJson(layer);
+        Assert.StartsWith(ProfileTransfer.LayerClipboardPrefix, clip);
+        Assert.True(ProfileTransfer.LooksLikeLayer(clip));
+        Assert.False(ProfileTransfer.LooksLikeLayer(json));
+        Assert.True(ProfileTransfer.LooksImportable(clip));
+        var resolvers = new ReferenceResolvers(ModExists: m => m == "Present");
+
+        foreach (var text in new[] { clip, json })
+        {
+            var result = ProfileTransfer.ImportLayer(text, resolvers);
+            Assert.Equal(TransferKind.Layer, result.Kind);
+            Assert.Null(result.Pass);
+            var imported = Assert.IsType<PenumbraAdjustLayer>(result.Layer);
+            Assert.NotEqual(layer.Id, imported.Id);
+            Assert.False(imported.Enabled);
+            Assert.True(imported.Collapsed);
+            Assert.Equal(2, imported.Mods.Count);
+            Assert.Equal(ModToggle.Enable, imported.Mods[1].State);
+            var warning = Assert.Single(result.Warnings);
+            Assert.StartsWith("Layer:", warning);
+            Assert.Contains("Missing Mod", warning);
+        }
+
+        // Glamourer and Vitrine references are checked like in a pass import; no resolvers means no warnings.
+        var glam = ProfileTransfer.ImportLayer(ProfileTransfer.ExportClipboard(new GlamourerLayer { DesignId = Guid.NewGuid() }), new ReferenceResolvers(GlamourerDesignExists: _ => false));
+        Assert.Contains(glam.Warnings, w => w.Contains("Glamourer design"));
+        var vit = ProfileTransfer.ImportLayer(ProfileTransfer.ExportJson(new VitrineDesignLayer { VitrineDesignId = Guid.NewGuid() }), new ReferenceResolvers(VitrineDesignExists: _ => false));
+        Assert.Contains(vit.Warnings, w => w.Contains("Vitrine design"));
+        Assert.Empty(ProfileTransfer.ImportLayer(ProfileTransfer.ExportJson(new GlamourerLayer { DesignId = Guid.NewGuid() })).Warnings);
+
+        // A kind from a newer version is kept verbatim and flagged.
+        var unknown = ProfileTransfer.ImportLayer("""{ "kind": "CustomizePlus", "scale": 2 }""");
+        Assert.Equal("CustomizePlus", Assert.IsType<UnknownLayer>(unknown.Layer).UnknownKind);
+        Assert.Contains(unknown.Warnings, w => w.Contains("CustomizePlus"));
+    }
+
+    [Fact]
+    public void LayerString_IsRejected_ByTheGenericImport_AndPassImportStillWorks()
+    {
+        var layerClip = ProfileTransfer.ExportClipboard(new HonorificLayer { Title = "T" });
+        var ex = Assert.Throws<FormatException>(() => ProfileTransfer.Import(layerClip));
+        Assert.Contains("Paste layer", ex.Message);
+
+        var pass = Fixtures.FullProfile().PassGroups[0].Passes[0];
+        Assert.Throws<FormatException>(() => ProfileTransfer.ImportLayer(ProfileTransfer.ExportClipboard(pass)));
+        Assert.Throws<FormatException>(() => ProfileTransfer.ImportLayer("not json"));
+        Assert.Throws<FormatException>(() => ProfileTransfer.ImportLayer("""{ "hello": 1 }"""));
+        Assert.Throws<FormatException>(() => ProfileTransfer.ImportLayer(ProfileTransfer.LayerClipboardPrefix + "@@@"));
+
+        pass.Layers[0].Collapsed = true;
+        var result = ProfileTransfer.Import(ProfileTransfer.ExportClipboard(pass));
+        Assert.Equal(TransferKind.Pass, result.Kind);
+        Assert.Null(result.Layer);
+        Assert.Equal(pass.Layers.Count, result.Pass!.Layers.Count);
+        Assert.True(result.Pass.Layers[0].Collapsed);
+        Assert.False(result.Pass.Layers[1].Collapsed);
     }
 
     [Fact]

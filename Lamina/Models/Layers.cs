@@ -11,6 +11,9 @@ public abstract class Layer
 
     public bool Enabled { get; set; } = true;
 
+    /// <summary> UI state: the layer card shows only its header row. Saved with the profile; not part of the design. </summary>
+    public bool Collapsed { get; set; }
+
     /// <summary> The "kind" discriminator used in JSON. Stable, never renamed. </summary>
     public abstract string Kind { get; }
 

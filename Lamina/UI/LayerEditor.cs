@@ -6,6 +6,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility.Raii;
 using Lamina.Decals;
 using Lamina.Models;
+using Lamina.Persistence;
 using Lamina.Runtime.State;
 using Penumbra.Api.Enums;
 
@@ -40,14 +41,67 @@ internal sealed class LayerEditor
         _images      = images;
     }
 
-    /// <summary> Draws the layer list. Returns true when the pass changed (already marked dirty). </summary>
-    public bool Draw(Profile profile, Pass pass)
+    // ---- layer list ---------------------------------------------------------------------------------
+
+    /// <summary> Icons of the per-layer header buttons, left to right. Their measured widths size the right-aligned block. </summary>
+    private static readonly FontAwesomeIcon[] HeaderButtons =
     {
+        FontAwesomeIcon.ArrowUp, FontAwesomeIcon.ArrowDown, FontAwesomeIcon.Clone, FontAwesomeIcon.Copy, FontAwesomeIcon.ShareSquare, FontAwesomeIcon.Trash,
+    };
+
+    private const float HeaderButtonGap = 2f;
+
+    /// <summary> How often the system clipboard is probed for the Paste button's enabled state, in seconds. </summary>
+    private const double ClipboardProbeInterval = 0.5;
+
+    /// <summary> Where "copied / pasted / moved" feedback goes (the window's status line); set per <see cref="Draw"/>. </summary>
+    private Action<string, Vector4>? _status;
+
+    /// <summary> Deep copy of the layer put on the clipboard last, so Paste works after another app replaced the clipboard. </summary>
+    private Layer? _copiedLayer;
+
+    private bool _clipboardHasLayer;
+    private double _clipboardProbedAt = double.NegativeInfinity;
+
+    /// <summary> Whether the per-layer transfer popup copies (true) or moves (false). Remembered across layers and frames. </summary>
+    private bool _transferCopies;
+
+    /// <summary> A deferred move / copy of a layer to another pass, applied after the list was drawn. </summary>
+    private readonly record struct LayerTransfer(Layer Layer, Profile TargetProfile, Pass TargetPass, bool Copy);
+
+    /// <summary>
+    /// Draws the layer list. Returns true when the design changed (the profile is already marked dirty); collapsing a card
+    /// does not count. <paramref name="status"/> receives copy / paste / move feedback for the window's status line.
+    /// </summary>
+    public bool Draw(Profile profile, Pass pass, Action<string, Vector4>? status = null)
+    {
+        _status = status;
         var changed = false;
+        var layers  = pass.Layers;
+
         if (ImGui.Button("+ Add Layer"))
             ImGui.OpenPopup("##addLayer");
         ImGui.SameLine();
+        var canPaste = _copiedLayer is not null || ClipboardHasLayer();
+        using (ImRaii.Disabled(!canPaste))
+        {
+            if (ImGui.Button("Paste layer") && canPaste && PasteLayer(profile, pass))
+                changed = true;
+        }
+        Widgets.Tooltip(canPaste
+            ? "Appends the layer on the clipboard (or the one copied last) to this pass."
+            : "Nothing to paste: copy a layer first (the clipboard holds no Lamina layer).");
+        ImGui.SameLine();
         Widgets.Hint(_s.Profiles.Config.Direction == EvaluationDirection.TopToBottom ? "lower layers override" : "upper layers override");
+
+        // Collapse / expand all, right-aligned on the same line.
+        var foldWidth = IconButtonWidth(FontAwesomeIcon.AngleDoubleUp) + HeaderButtonGap + IconButtonWidth(FontAwesomeIcon.AngleDoubleDown);
+        ImGui.SameLine(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX() - foldWidth);
+        if (Widgets.IconButton(FontAwesomeIcon.AngleDoubleUp, "Collapse all layers", layers.Any(l => !l.Collapsed)))
+            SetAllCollapsed(profile, layers, true);
+        ImGui.SameLine(0, HeaderButtonGap);
+        if (Widgets.IconButton(FontAwesomeIcon.AngleDoubleDown, "Expand all layers", layers.Any(l => l.Collapsed)))
+            SetAllCollapsed(profile, layers, false);
 
         using (var popup = ImRaii.Popup("##addLayer"))
         {
@@ -67,13 +121,19 @@ internal sealed class LayerEditor
         }
 
         int? moveFrom = null, moveTo = null;
-        Guid? remove = null;
-        var layers = pass.Layers;
+        Guid? remove = null, duplicate = null;
+        LayerTransfer? transfer = null;
+        var buttonsWidth = HeaderButtons.Sum(IconButtonWidth) + (HeaderButtons.Length - 1) * HeaderButtonGap;
         for (var i = 0; i < layers.Count; i++)
         {
             var layer = layers[i];
             using var id = ImRaii.PushId(layer.Id.ToString());
             ImGui.Separator();
+
+            if (ImGui.ArrowButton("##fold", layer.Collapsed ? ImGuiDir.Right : ImGuiDir.Down))
+                SetCollapsed(profile, layer, !layer.Collapsed);
+            Widgets.Tooltip(layer.Collapsed ? "Expand" : "Collapse");
+            ImGui.SameLine(0, HeaderButtonGap);
 
             var enabled = layer.Enabled;
             if (ImGui.Checkbox("##en", ref enabled))
@@ -83,26 +143,51 @@ internal sealed class LayerEditor
                 changed = true;
             }
             ImGui.SameLine();
-            var display = LayerKinds.All.FirstOrDefault(k => k.Kind == layer.Kind).DisplayName ?? layer.Kind;
-            using (ImRaii.PushColor(ImGuiCol.Text, Widgets.Accent))
-                ImGui.TextUnformatted(display);
-            ImGui.SameLine();
-            using (ImRaii.PushColor(ImGuiCol.Text, layer.Enabled ? new Vector4(1, 1, 1, 1) : Widgets.Muted))
-                ImGui.TextUnformatted(Summary(layer));
+
+            // Kind + summary, clipped so they never run under the buttons; the full summary is in the tooltip.
+            var summary   = Summary(layer);
+            var textStart = ImGui.GetCursorScreenPos();
+            var textMaxX  = MathF.Max(textStart.X + 1f, textStart.X + ImGui.GetContentRegionAvail().X - buttonsWidth - ImGui.GetStyle().ItemSpacing.X);
             var (avail, reason) = Availability(layer.Kind);
-            if (!avail)
+            ImGui.PushClipRect(textStart, new Vector2(textMaxX, textStart.Y + ImGui.GetFrameHeight()), true);
+            using (ImRaii.Group())
             {
+                ImGui.AlignTextToFramePadding();
+                using (ImRaii.PushColor(ImGuiCol.Text, Widgets.Accent))
+                    ImGui.TextUnformatted(DisplayName(layer.Kind));
                 ImGui.SameLine();
-                Widgets.Badge("(plugin missing)", Widgets.Warn, reason);
+                using (ImRaii.PushColor(ImGuiCol.Text, layer.Enabled ? new Vector4(1, 1, 1, 1) : Widgets.Muted))
+                    ImGui.TextUnformatted(summary);
+                if (!avail)
+                {
+                    ImGui.SameLine();
+                    Widgets.Badge("(plugin missing)", Widgets.Warn);
+                }
+            }
+            ImGui.PopClipRect();
+            if (ImGui.IsItemHovered() && ImGui.GetMousePos().X < textMaxX)
+            {
+                ImGui.SetTooltip($"{DisplayName(layer.Kind)}: {summary}{(avail ? string.Empty : $"\n{reason}")}\nClick to {(layer.Collapsed ? "expand" : "collapse")}.");
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+                    SetCollapsed(profile, layer, !layer.Collapsed);
             }
 
-            ImGui.SameLine(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX() - 84 * Widgets.Scale);
+            ImGui.SameLine(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX() - buttonsWidth);
             if (Widgets.IconButton(FontAwesomeIcon.ArrowUp, "Move up", i > 0)) { moveFrom = i; moveTo = i - 1; }
-            ImGui.SameLine(0, 2);
+            ImGui.SameLine(0, HeaderButtonGap);
             if (Widgets.IconButton(FontAwesomeIcon.ArrowDown, "Move down", i < layers.Count - 1)) { moveFrom = i; moveTo = i + 1; }
-            ImGui.SameLine(0, 2);
+            ImGui.SameLine(0, HeaderButtonGap);
+            if (Widgets.IconButton(FontAwesomeIcon.Clone, "Duplicate (inserted below)")) duplicate = layer.Id;
+            ImGui.SameLine(0, HeaderButtonGap);
+            if (Widgets.IconButton(FontAwesomeIcon.Copy, "Copy to the clipboard (paste into any pass with \"Paste layer\")")) CopyLayer(layer);
+            ImGui.SameLine(0, HeaderButtonGap);
+            if (Widgets.IconButton(FontAwesomeIcon.ShareSquare, "Move or copy to another pass…")) ImGui.OpenPopup("##layerTo");
+            ImGui.SameLine(0, HeaderButtonGap);
             if (Widgets.IconButton(FontAwesomeIcon.Trash, "Remove layer")) remove = layer.Id;
+            DrawTransferPopup(pass, layer, ref transfer);
 
+            if (layer.Collapsed)
+                continue;
             using var indent = ImRaii.PushIndent(22f * Widgets.Scale);
             if (DrawLayerFields(profile, layer))
             {
@@ -115,9 +200,203 @@ internal sealed class LayerEditor
 
         if (moveFrom is { } f && moveTo is { } t && _s.Profiles.MoveLayer(profile, pass, f, t))
             changed = true;
+        if (duplicate is { } d && _s.Profiles.DuplicateLayer(profile, pass, d) is not null)
+            changed = true;
         if (remove is { } r && _s.Profiles.RemoveLayer(profile, pass, r))
             changed = true;
+        if (transfer is { } x && ApplyTransfer(profile, pass, x))
+            changed = true;
         return changed;
+    }
+
+    private static string DisplayName(string kind)
+        => LayerKinds.All.FirstOrDefault(k => k.Kind == kind).DisplayName ?? kind;
+
+    /// <summary> Width an <see cref="Widgets.IconButton"/> takes: the glyph in the icon font plus the frame padding. </summary>
+    private static float IconButtonWidth(FontAwesomeIcon icon)
+    {
+        using var font = ImRaii.PushFont(UiBuilder.IconFont);
+        return ImGui.CalcTextSize(icon.ToIconString()).X + ImGui.GetStyle().FramePadding.X * 2f;
+    }
+
+    private void Report(string text, Vector4 color)
+        => _status?.Invoke(text, color);
+
+    // ---- collapse -----------------------------------------------------------------------------------
+
+    /// <summary> Collapsing is a saved UI preference, not a design change: marks dirty, never invalidates the engine. </summary>
+    private void SetCollapsed(Profile profile, Layer layer, bool collapsed)
+    {
+        if (layer.Collapsed == collapsed)
+            return;
+        layer.Collapsed = collapsed;
+        _s.Profiles.MarkDirty(profile);
+    }
+
+    private void SetAllCollapsed(Profile profile, List<Layer> layers, bool collapsed)
+    {
+        var any = false;
+        foreach (var layer in layers)
+        {
+            if (layer.Collapsed == collapsed)
+                continue;
+            layer.Collapsed = collapsed;
+            any             = true;
+        }
+        if (any)
+            _s.Profiles.MarkDirty(profile);
+    }
+
+    // ---- copy / paste / move ------------------------------------------------------------------------
+
+    private ReferenceResolvers Resolvers()
+        => new(
+            id => !_s.Glamourer.Available || _caches.DesignNames.ContainsKey(id),
+            id => !_s.Vitrine.Available || _s.Vitrine.GetDesign(id) is not null,
+            dir => !_s.Penumbra.Available || _caches.ModNames.ContainsKey(dir));
+
+    private string ReadClipboard()
+    {
+        try
+        {
+            return ImGui.GetClipboardText() ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Debug(ex, "UI: reading the clipboard failed.");
+            return string.Empty;
+        }
+    }
+
+    /// <summary> Throttled probe of the system clipboard for the Paste button. A layer string or raw JSON counts. </summary>
+    private bool ClipboardHasLayer()
+    {
+        var now = ImGui.GetTime();
+        if (now - _clipboardProbedAt < ClipboardProbeInterval)
+            return _clipboardHasLayer;
+        _clipboardProbedAt = now;
+        var text = ReadClipboard();
+        _clipboardHasLayer = ProfileTransfer.LooksLikeLayer(text) || text.TrimStart().StartsWith('{');
+        return _clipboardHasLayer;
+    }
+
+    private void CopyLayer(Layer layer)
+    {
+        _copiedLayer = Cloner.Clone(layer);
+        try
+        {
+            ImGui.SetClipboardText(ProfileTransfer.ExportClipboard(layer));
+            _clipboardHasLayer = true;
+            _clipboardProbedAt = ImGui.GetTime();
+            Report($"{DisplayName(layer.Kind)} layer copied to the clipboard.", Widgets.Good);
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Warning(ex, "UI: writing the clipboard failed.");
+            Report($"{DisplayName(layer.Kind)} layer copied (the system clipboard could not be written; Paste still works here).", Widgets.Warn);
+        }
+    }
+
+    /// <summary> Appends the clipboard's layer, else the one copied last, to the pass. Returns true when a layer was added. </summary>
+    private bool PasteLayer(Profile profile, Pass pass)
+    {
+        Layer? layer = null;
+        IReadOnlyList<string> warnings = Array.Empty<string>();
+        var text = ReadClipboard();
+        if (ProfileTransfer.LooksImportable(text))
+        {
+            try
+            {
+                var result = ProfileTransfer.ImportLayer(text, Resolvers());
+                layer    = result.Layer;
+                warnings = result.Warnings;
+            }
+            catch (Exception ex) when (ex is FormatException or Newtonsoft.Json.JsonException)
+            {
+                if (_copiedLayer is null)
+                {
+                    Report($"Paste failed: {ex.Message}", Widgets.Bad);
+                    return false;
+                }
+                _s.Log.Debug(ex, "UI: the clipboard holds no layer; pasting the last copied layer instead.");
+            }
+        }
+        if (layer is null && _copiedLayer is { } remembered)
+        {
+            layer    = Cloner.CloneWithFreshIds(remembered);
+            warnings = ProfileTransfer.CheckReferences(layer, Resolvers());
+        }
+        if (layer is null)
+        {
+            Report("Nothing to paste: copy a layer first.", Widgets.Warn);
+            return false;
+        }
+
+        _s.Profiles.AddLayer(profile, pass, layer);
+        var name = DisplayName(layer.Kind);
+        Report(warnings.Count == 0 ? $"Pasted {name} layer." : $"Pasted {name} layer. {string.Join(" ", warnings)}", warnings.Count == 0 ? Widgets.Good : Widgets.Warn);
+        return true;
+    }
+
+    /// <summary> Every profile → group → pass (except the current pass) as nested menus; the choice is deferred to <paramref name="transfer"/>. </summary>
+    private void DrawTransferPopup(Pass pass, Layer layer, ref LayerTransfer? transfer)
+    {
+        using var popup = ImRaii.Popup("##layerTo");
+        if (!popup)
+            return;
+        if (ImGui.RadioButton("Move", !_transferCopies)) _transferCopies = false;
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Copy", _transferCopies)) _transferCopies = true;
+        ImGui.SameLine();
+        Widgets.Hint("to:");
+        ImGui.Separator();
+
+        var listed = 0;
+        foreach (var target in _s.Profiles.Profiles)
+        {
+            if (!target.PassGroups.Any(g => g.Passes.Any(p => !ReferenceEquals(p, pass))))
+                continue;
+            listed++;
+            using var pid  = ImRaii.PushId(target.Id.ToString());
+            using var menu = ImRaii.Menu(target.Name);
+            if (!menu)
+                continue;
+            foreach (var group in target.PassGroups)
+            {
+                if (!group.Passes.Any(p => !ReferenceEquals(p, pass)))
+                    continue;
+                using var gid   = ImRaii.PushId(group.Id.ToString());
+                using var gmenu = ImRaii.Menu(group.Name);
+                if (!gmenu)
+                    continue;
+                foreach (var targetPass in group.Passes)
+                {
+                    if (ReferenceEquals(targetPass, pass))
+                        continue;
+                    using var tid = ImRaii.PushId(targetPass.Id.ToString());
+                    if (ImGui.MenuItem(targetPass.Name))
+                        transfer = new LayerTransfer(layer, target, targetPass, _transferCopies);
+                }
+            }
+        }
+        if (listed == 0)
+            Widgets.Hint("No other pass to put the layer in.");
+    }
+
+    private bool ApplyTransfer(Profile profile, Pass pass, LayerTransfer x)
+    {
+        var where = $"{x.TargetProfile.Name} / {_s.Profiles.GroupOf(x.TargetPass)?.Name ?? "?"} / {x.TargetPass.Name}";
+        var name  = DisplayName(x.Layer.Kind);
+        if (x.Copy)
+        {
+            _s.Profiles.CopyLayerTo(x.Layer, x.TargetProfile, x.TargetPass);
+            Report($"Copied {name} layer to {where}.", Widgets.Good);
+            return true;
+        }
+        if (!_s.Profiles.MoveLayerTo(profile, pass, x.Layer, x.TargetProfile, x.TargetPass))
+            return false;
+        Report($"Moved {name} layer to {where}.", Widgets.Good);
+        return true;
     }
 
     private (bool Available, string Reason) Availability(string kind)
