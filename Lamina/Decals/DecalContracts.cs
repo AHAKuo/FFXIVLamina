@@ -51,13 +51,20 @@ public sealed class DecalPlacement
     /// <summary> Human readable part name from the pick (bone name based), informational. </summary>
     public string? PartName { get; set; }
 
+    /// <summary>
+    /// Game path of the skin diffuse the decal was placed on. A body can draw several skin textures at once (a body mod's
+    /// torso, vanilla hands), each its own <see cref="SkinMesh"/> of the same <see cref="Surface"/>; this picks the right one.
+    /// Null (older placements) = the surface's first mesh.
+    /// </summary>
+    public string? DiffuseGamePath { get; set; }
+
     public DecalPlacement Clone()
         => (DecalPlacement)MemberwiseClone();
 
     /// <summary> Stable text of the parts that affect the bake, for hashing. </summary>
     public string ContentKey()
         => FormattableString.Invariant(
-            $"{Surface}|{Position.X:F4},{Position.Y:F4},{Position.Z:F4}|{Normal.X:F4},{Normal.Y:F4},{Normal.Z:F4}|{Rotation:F2}|{Size:F4}|{Depth:F4}");
+            $"{Surface}|{DiffuseGamePath?.ToLowerInvariant()}|{Position.X:F4},{Position.Y:F4},{Position.Z:F4}|{Normal.X:F4},{Normal.Y:F4},{Normal.Z:F4}|{Rotation:F2}|{Size:F4}|{Depth:F4}");
 }
 
 /// <summary> Frozen content of one decal inside a VirtualDesign. </summary>
@@ -167,8 +174,9 @@ public readonly record struct DecalPick(
     public DecalPlacement ToPlacement(float size, float rotation, float depth = 0.05f)
         => new()
         {
-            Surface    = Mesh.Surface,
-            Position   = RestPosition,
+            Surface         = Mesh.Surface,
+            DiffuseGamePath = Mesh.DiffuseGamePath,
+            Position        = RestPosition,
             Normal     = RestNormal,
             Size       = size,
             Rotation   = rotation,

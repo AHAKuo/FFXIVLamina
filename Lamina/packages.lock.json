@@ -90,12 +90,8 @@
           "System.IO.Hashing": "[9.0.8, )"
         }
       },
-      "vitrine": {
-        "type": "Project",
-        "dependencies": {
-          "Luna": "[1.0.0, )",
-          "Penumbra.Api": "[5.19.2, )"
-        }
+      "xivlivemesh": {
+        "type": "Project"
       }
     }
   }

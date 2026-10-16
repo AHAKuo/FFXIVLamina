@@ -7,4 +7,5 @@
   <Project Path="Lamina/Lamina.csproj" />
   <Project Path="Lamina.Tests/Lamina.Tests.csproj" />
   <Project Path="Penumbra.Api/Penumbra.Api.csproj" />
+  <Project Path="XivLiveMesh/XivLiveMesh.csproj" />
 </Solution>
