@@ -23,8 +23,12 @@ internal static class Widgets
     /// <summary> Shows a tooltip when the last item is hovered (including while disabled). </summary>
     public static void Tooltip(string text)
     {
-        if (!string.IsNullOrEmpty(text) && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip(text);
+        if (string.IsNullOrEmpty(text) || !ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            return;
+        using var tip = ImRaii.Tooltip();
+        ImGui.PushTextWrapPos(ImGui.GetFontSize() * 35f);
+        ImGui.TextUnformatted(text);
+        ImGui.PopTextWrapPos();
     }
 
     /// <summary> Icon button with a tooltip. </summary>
@@ -39,7 +43,7 @@ internal static class Widgets
 
     /// <summary> Muted help text. </summary>
     public static void Hint(string text)
-        => ImGui.TextColored(Muted, text);
+        => Paragraph(text);
 
     /// <summary> Wrapped muted paragraph. </summary>
     public static void Paragraph(string text)
