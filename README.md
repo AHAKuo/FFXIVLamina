@@ -8,6 +8,13 @@ If that sounds like something you want, then Lamina is for you.
 ## A tour in pictures
 The screenshots below walk through one setup from the top down: a profile, the groups and passes inside it, the layers inside a pass, and what the character looks like at the end.
 
+### Lamina works inside its own Penumbra collection
+This is the most important thing to know. Lamina never touches your main collection. It writes mod states only into a collection you name (the default is **Lamina**), as temporary settings it can remove again in one call. You create that collection in Penumbra, assign your character to it, and from then on Lamina switches mods on and off inside it.
+
+![Penumbra collection status in the Settings tab](images/readme/00-penumbra-collection.png)
+
+The Settings tab shows the collection's status. Green means the collection exists and your character is assigned to it. If it is missing or not assigned, the same line tells you what to do. Lamina never assigns or unassigns the collection itself; to opt out of mod changes, unassign it in Penumbra and Lamina clears what it wrote within a second. Glamourer, Honorific, Moodles, Customize+ and Simple Heels still apply without the collection; only mods need it.
+
 ### One switch, a whole character
 Lamina off is your plain Glamourer and Penumbra state. Lamina on is whatever the active profile resolves to: outfit, hair, hair colour, body mods, titles, tattoos. Flipping the switch is one redraw either way.
 
@@ -104,7 +111,9 @@ Lamina is one of ahadev's plugins and installs through Dalamud's plugin installe
    https://raw.githubusercontent.com/AHAKuo/ahadevtools/main/pluginmaster.json
    ```
 3. Type `/xlplugins` to open the plugin installer, search for **Lamina** and click **Install**.
-4. Make sure Glamourer and Penumbra are installed and enabled, then type `/lam` to open Lamina.
+4. Make sure Glamourer and Penumbra are installed and enabled.
+5. In Penumbra, create a new collection named **Lamina** (recommended; the name can be changed in Lamina's Settings tab). Let it inherit from your main collection so your usual mods stay on, then assign your character to it (**Collections → Individual Assignments**, or **Your Character**). Lamina only writes mod states into this collection and never touches your main one.
+6. Type `/lam` to open Lamina, go to **Settings** and check the Penumbra collection line reads green. Press **Refresh** if you just created the collection.
 
 Updates arrive through the same installer like any other plugin. The repository also lists ahadev's other plugins (Vitrine among them), so you only add it once.
 
