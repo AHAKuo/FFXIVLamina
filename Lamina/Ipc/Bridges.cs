@@ -139,6 +139,53 @@ public interface IHonorificBridge : IPluginBridge
     string GetTitle(int objectIndex);
 }
 
+/// <summary> Result codes of the Customize+ IPC (see CustomizePlus/Api/Enums/ErrorCode.cs). </summary>
+public enum CustomizePlusEc
+{
+    Success          = 0,
+    InvalidCharacter = 1,
+    CorruptedProfile = 2,
+    ProfileNotFound  = 3,
+    InvalidArgument  = 4,
+    UnknownError     = 255,
+}
+
+/// <summary> One saved Customize+ profile as its list call reports it. </summary>
+public sealed record CustomizePlusProfileInfo(Guid Id, string Name, string Path, int Priority, bool Enabled);
+
+public interface ICustomizePlusBridge : IPluginBridge
+{
+    /// <summary> Every saved (non-temporary) profile. Heavy on the Customize+ side; cache it (see <c>CustomizePlusProfileCache</c>). </summary>
+    IReadOnlyList<CustomizePlusProfileInfo> GetProfiles();
+
+    /// <summary> The bone edits of a saved profile (its enabled templates merged), or null when the profile is missing or Customize+ is unavailable. </summary>
+    IReadOnlyDictionary<string, CustomizePlusBone>? GetProfileBones(Guid profileId);
+
+    /// <summary> Applies the bones as the actor's temporary profile (replacing an earlier one). Returns the code and the temporary profile's id. </summary>
+    (CustomizePlusEc Code, Guid? TemporaryId) SetTemporaryProfile(int objectIndex, IReadOnlyDictionary<string, CustomizePlusBone> bones);
+
+    /// <summary> Removes the actor's temporary profile. ProfileNotFound when there is none. </summary>
+    CustomizePlusEc DeleteTemporaryProfile(int objectIndex);
+
+    /// <summary> Raised on the framework thread when Customize+ reports a change to the profile active on an actor (saved profiles only). </summary>
+    event Action? ProfilesChanged;
+}
+
+public interface ISimpleHeelsBridge : IPluginBridge
+{
+    /// <summary> Registers a configuration for the actor with just this height offset; it replaces the actor's own Simple Heels configuration while registered. </summary>
+    bool RegisterOffset(int objectIndex, float offset);
+
+    /// <summary> Removes the registered configuration so the actor's own Simple Heels configuration applies again. </summary>
+    bool Unregister(int objectIndex);
+
+    /// <summary> The local player's own resolved height offset (per-footwear configuration, IPC registrations excluded), or null when unavailable. </summary>
+    float? GetLocalOffset();
+
+    /// <summary> Raised on the framework thread with the new value of <see cref="GetLocalOffset"/> when Simple Heels reports a change to the local player. </summary>
+    event Action<float>? LocalOffsetChanged;
+}
+
 public interface IMoodlesBridge : IPluginBridge
 {
     /// <summary> Every saved Moodle: id, icon, full path, title. </summary>

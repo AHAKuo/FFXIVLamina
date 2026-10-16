@@ -9,7 +9,8 @@ namespace Lamina.Runtime.Engine;
 
 /// <summary>
 /// Pushes a design's delta to every integration in one batch and in one frame (TDD 7.1 #6, 5.8):
-/// Penumbra (clean slate, then the full mod state) → Glamourer (locked state) → Honorific → Moodles → decals (handed to the
+/// Penumbra (clean slate, then the full mod state) → Glamourer (locked state) → Honorific → Moodles → Customize+ (temporary
+/// profile) → Simple Heels (registered offset) → decals (handed to the
 /// publisher, which bakes asynchronously and completes with its own redraw request, or parked in the store until the mods
 /// redraw has loaded the outfit they go on) → redraw request.
 /// Never throws; every outcome lands in the returned <see cref="ApplyInfo"/>. The design hash is recorded only when every
@@ -21,6 +22,8 @@ public sealed class Applier
     private readonly IPenumbraBridge _penumbra;
     private readonly IHonorificBridge _honorific;
     private readonly IMoodlesBridge _moodles;
+    private readonly ICustomizePlusBridge _customizePlus;
+    private readonly ISimpleHeelsBridge _heels;
     private readonly IDecalPublisher? _decals;
     private readonly AppliedStateStore _store;
     private readonly RedrawScheduler _redraw;
@@ -37,6 +40,8 @@ public sealed class Applier
     /// <param name="penumbra"> Penumbra bridge. </param>
     /// <param name="honorific"> Honorific bridge (optional plugin; skipped while unavailable). </param>
     /// <param name="moodles"> Moodles bridge (optional plugin; skipped while unavailable). </param>
+    /// <param name="customizePlus"> Customize+ bridge (optional plugin; skipped while unavailable). </param>
+    /// <param name="heels"> Simple Heels bridge (optional plugin; skipped while unavailable). </param>
     /// <param name="decals"> Decal publisher; null when the decal feature could not start (decal layers are then a reported problem, not a retry). </param>
     /// <param name="store"> Applied state, updated after every apply. </param>
     /// <param name="redraw"> Receives the redraw request when mods changed. </param>
@@ -49,6 +54,7 @@ public sealed class Applier
     /// <param name="log"> Optional debug logger. </param>
     /// <param name="drawObjectKey"> Identity of the player's draw object right now (<see cref="ISkinMeshProvider.DrawObjectState"/>), recorded with an immediate decal publish. </param>
     public Applier(IGlamourerBridge glamourer, IPenumbraBridge penumbra, IHonorificBridge honorific, IMoodlesBridge moodles,
+        ICustomizePlusBridge customizePlus, ISimpleHeelsBridge heels,
         IDecalPublisher? decals, AppliedStateStore store, RedrawScheduler redraw, Func<LaminaConfig> config, Func<Guid?> collectionId,
         Func<CollectionStatus> collectionStatus, Func<int?> localPlayerIndex, Func<nint> localPlayerAddress,
         Func<DateTime>? clock = null, Action<string>? log = null, Func<string?>? drawObjectKey = null)
@@ -57,6 +63,8 @@ public sealed class Applier
         _penumbra           = penumbra;
         _honorific          = honorific;
         _moodles            = moodles;
+        _customizePlus      = customizePlus;
+        _heels              = heels;
         _decals             = decals;
         _store              = store;
         _redraw             = redraw;
@@ -80,14 +88,14 @@ public sealed class Applier
         {
             _store.DesignHash = design.ContentHash;
             _store.LastDesign = design;
-            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, false, false, problems);
+            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, false, false, false, false, problems);
         }
 
         if (_localPlayerIndex() is not { } index)
         {
             problems.Add("no local player");
             _store.DesignHash = null;
-            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, false, false, problems);
+            return new ApplyInfo(now, design.ContentHash, false, false, 0, false, false, false, false, false, false, false, false, problems);
         }
 
         // True until a section that was attempted failed in a way worth retrying.
@@ -298,6 +306,90 @@ public sealed class Applier
             }
         }
 
+        // (d2) Customize+: one temporary profile with the merged bones (Customize+ replaces an earlier temporary profile on the
+        // actor itself), or delete Lamina's temporary profile when the design has no bones any more.
+        var customizePlusApplied = false;
+        if (delta.CustomizePlusChanged && _customizePlus.Available)
+        {
+            if (design.HasCustomizePlus)
+            {
+                var bones = design.CustomizePlusBones.ToDictionary(kv => kv.Key, kv => kv.Value.Value, StringComparer.Ordinal);
+                var (code, tempId) = _customizePlus.SetTemporaryProfile(index, bones);
+                if (code == CustomizePlusEc.Success)
+                {
+                    customizePlusApplied            = true;
+                    _store.CustomizePlusHash        = DesignDiffer.CustomizePlusHash(design);
+                    _store.CustomizePlusTemporaryId = tempId;
+                }
+                else
+                {
+                    problems.Add($"Customize+ SetTemporaryProfile failed: {code}");
+                    complete = false;
+                }
+            }
+            else if (_store.CustomizePlusApplied)
+            {
+                var code = _customizePlus.DeleteTemporaryProfile(index);
+                // ProfileNotFound: already gone (Customize+ reloaded, or someone else removed it); nothing left to undo.
+                if (code is CustomizePlusEc.Success or CustomizePlusEc.ProfileNotFound)
+                {
+                    customizePlusApplied            = true;
+                    _store.CustomizePlusHash        = null;
+                    _store.CustomizePlusTemporaryId = null;
+                }
+                else
+                {
+                    problems.Add($"Customize+ DeleteTemporaryProfile failed: {code}");
+                    complete = false;
+                }
+            }
+        }
+        else if (delta.CustomizePlusChanged && design.HasCustomizePlus)
+        {
+            problems.Add("Customize+ unavailable");
+        }
+
+        // (d3) Simple Heels: register one configuration with the resolved height offset (the player's own resolved offset plus the
+        // design's for a relative one; the engine re-applies when that base changes), or unregister when the design has none.
+        var heelsApplied = false;
+        if (delta.HeelsChanged && _heels.Available)
+        {
+            if (design.SimpleHeels is { } heels)
+            {
+                var offset     = heels.Value;
+                var baseOffset = offset.Relative ? _heels.GetLocalOffset() ?? 0f : 0f;
+                if (_heels.RegisterOffset(index, baseOffset + offset.Offset))
+                {
+                    heelsApplied     = true;
+                    _store.HeelsSet  = offset;
+                    _store.HeelsBase = offset.Relative ? baseOffset : null;
+                }
+                else
+                {
+                    problems.Add("Simple Heels RegisterPlayer failed");
+                    complete = false;
+                }
+            }
+            else if (_store.HeelsSet is not null)
+            {
+                if (_heels.Unregister(index))
+                {
+                    heelsApplied     = true;
+                    _store.HeelsSet  = null;
+                    _store.HeelsBase = null;
+                }
+                else
+                {
+                    problems.Add("Simple Heels UnregisterPlayer failed");
+                    complete = false;
+                }
+            }
+        }
+        else if (delta.HeelsChanged && design.SimpleHeels is not null)
+        {
+            problems.Add("Simple Heels unavailable");
+        }
+
         // (e) Decals: the publisher bakes them into the skin textures and redirects those in the collection, asynchronously; the
         // engine requests the redraw when it completes and forgets the hash again if it fails. Mod changes republish too, since
         // the bake contains the upstream skin texture a body mod may have just changed. When this apply (or an earlier one)
@@ -368,7 +460,7 @@ public sealed class Applier
 
         var deferred = redrawRequested && _redraw.Pending && (snapshot.RedrawUnsafe || _config().RedrawPolicy == RedrawPolicy.Never);
         return new ApplyInfo(now, design.ContentHash, glamourerApplied, modsApplied, modsWritten, honorificApplied, moodlesApplied,
-            decalsPublished, decalsDeferred, redrawRequested, deferred, problems);
+            customizePlusApplied, heelsApplied, decalsPublished, decalsDeferred, redrawRequested, deferred, problems);
     }
 
     /// <summary> Unlocks and reverts the actor's Glamourer state to the configured fallback (TDD: fall back to the game state when no rule applies). </summary>

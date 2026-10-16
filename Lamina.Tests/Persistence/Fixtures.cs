@@ -122,6 +122,8 @@ public static class Fixtures
                 },
             },
             new PenumbraAdjustLayer { Mods = { new ModState { ModDirectory = "Eve", State = null, Priority = null, Settings = new() { ["Skin"] = new() { "Glossy" } } } } },
+            new CustomizePlusLayer { ProfileId = Guid.Parse("c0de0000-0000-0000-0000-00000000c0de"), ProfileName = "Tall Lalafell" },
+            new SimpleHeelsLayer { Offset = 0.125f, Relative = false },
             new DecalLayer
             {
                 ImageFile = "3f2a9c1e5b7d4e8f9a0b1c2d3e4f5a6b.png",

@@ -60,6 +60,10 @@ public static class DesignExplainer
                 Line(sb, $"Moodle {id}", f.Value.ToString(), f.Source);
             foreach (var f in d.Decals)
                 Line(sb, $"Decal {f.Value.ImageFile}", DescribeDecal(f.Value), f.Source);
+            foreach (var group in d.CustomizePlusBones.GroupBy(kv => kv.Value.Source).OrderBy(g => g.Key.Note, StringComparer.Ordinal))
+                Line(sb, "Customize+", $"{group.Count()} bone(s)", group.Key);
+            if (d.SimpleHeels is { } heels)
+                Line(sb, "Simple Heels", DescribeHeels(heels.Value), heels.Source);
         }
 
         if (skipped is { Count: > 0 })
@@ -79,6 +83,12 @@ public static class DesignExplainer
         var where = string.IsNullOrEmpty(p.PartName) ? p.Surface.ToString() : $"{p.Surface} / {p.PartName}";
         return FormattableString.Invariant($"{where} · size {p.Size:0.###} m · opacity {spec.Opacity:P0}");
     }
+
+    /// <summary> "+0.12 (added to your offset)" or "0.12". </summary>
+    public static string DescribeHeels(HeelsOffset heels)
+        => heels.Relative
+            ? $"{(heels.Offset >= 0 ? "+" : string.Empty)}{heels.Offset.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} (added to your offset)"
+            : heels.Offset.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
 
     private static void Line(StringBuilder sb, string field, string value, Provenance source)
         => sb.Append("  ").Append(field).Append(" = ").Append(value).Append("    ← ").AppendLine(source.Note.Length == 0 ? "(unknown)" : source.Note);

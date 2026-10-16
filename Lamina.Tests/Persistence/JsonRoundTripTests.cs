@@ -170,7 +170,15 @@ public class JsonRoundTripTests
         Assert.Null(partial.Priority);
         Assert.Equal(new[] { "Glossy" }, partial.Settings!["Skin"]);
 
-        var decal = Assert.IsType<DecalLayer>(reloaded[9]);
+        var cplus = Assert.IsType<CustomizePlusLayer>(reloaded[9]);
+        Assert.Equal(Guid.Parse("c0de0000-0000-0000-0000-00000000c0de"), cplus.ProfileId);
+        Assert.Equal("Tall Lalafell", cplus.ProfileName);
+
+        var heels = Assert.IsType<SimpleHeelsLayer>(reloaded[10]);
+        Assert.Equal(0.125f, heels.Offset);
+        Assert.False(heels.Relative);
+
+        var decal = Assert.IsType<DecalLayer>(reloaded[11]);
         Assert.Equal("3f2a9c1e5b7d4e8f9a0b1c2d3e4f5a6b.png", decal.ImageFile);
         Assert.Equal(0.75f, decal.Opacity);
         Assert.True(decal.IsComplete);
@@ -262,7 +270,7 @@ public class JsonRoundTripTests
                 "passes": [ {
                   "id": "6f1c0000-0000-0000-0000-000000000004", "name": "P",
                   "layers": [
-                    { "kind": "CustomizePlus", "id": "6f1c0000-0000-0000-0000-000000000005", "profileId": "abc", "scale": [ 1.0, 2.5 ] },
+                    { "kind": "FutureKind", "id": "6f1c0000-0000-0000-0000-000000000005", "profileId": "abc", "scale": [ 1.0, 2.5 ] },
                     { "kind": "Glamourer", "designId": "6f1c0000-0000-0000-0000-000000000006" } ]
                 } ]
               } ]
@@ -278,7 +286,7 @@ public class JsonRoundTripTests
 
         var pass = profile.PassGroups[0].Passes[0];
         var unknownLayer = Assert.IsType<UnknownLayer>(pass.Layers[0]);
-        Assert.Equal("CustomizePlus", unknownLayer.Kind);
+        Assert.Equal("FutureKind", unknownLayer.Kind);
         Assert.IsType<GlamourerLayer>(pass.Layers[1]);
 
         var written  = JObject.Parse(JsonSettings.Serialize(profile));

@@ -31,7 +31,7 @@ public sealed partial class LaminaWindow
             if (ImGui.Checkbox(enabled ? "Lamina is ON##master" : "Lamina is OFF##master", ref enabled))
                 _s.Engine.SetEnabled(enabled);
         }
-        Widgets.Tooltip("Off runs a full cleanup: Lamina's mod settings are removed, Glamourer is reverted (to the game state or automation, see the Glamourer section), the title and moodles Lamina set are removed.");
+        Widgets.Tooltip("Off runs a full cleanup: Lamina's mod settings are removed, Glamourer is reverted (to the game state or automation, see the Glamourer section), the title, moodles, temporary Customize+ profile and Simple Heels offset Lamina set are removed.");
         ImGui.SameLine();
         if (ImGui.Button("Reapply now"))
             _s.Engine.RequestReapply();
@@ -123,6 +123,8 @@ public sealed partial class LaminaWindow
                 DrawIntegrationRow(_s.Penumbra, required: true);
                 DrawIntegrationRow(_s.Honorific, required: false);
                 DrawIntegrationRow(_s.Moodles, required: false);
+                DrawIntegrationRow(_s.CustomizePlus, required: false);
+                DrawIntegrationRow(_s.SimpleHeels, required: false);
                 DrawIntegrationRow(_s.Vitrine, required: false);
             }
         }
@@ -155,7 +157,7 @@ public sealed partial class LaminaWindow
                 break;
             case CollectionStatus.NotAssigned:
                 ImGui.TextColored(Widgets.Warn, $"Assign your character to the \"{cfg.CollectionName}\" collection in Penumbra (Collections → Individual Assignments, or Your Character), then press Refresh.");
-                Widgets.Hint("Lamina never assigns or unassigns collections itself. Until the collection is assigned, mods are skipped; Glamourer, Honorific and Moodles still apply.");
+                Widgets.Hint("Lamina never assigns or unassigns collections itself. Until the collection is assigned, mods are skipped; Glamourer, Honorific, Moodles, Customize+ and Simple Heels still apply.");
                 break;
             case CollectionStatus.Assigned:
                 ImGui.TextColored(Widgets.Good, $"\"{cfg.CollectionName}\" is assigned to your character. Mods will be applied.");

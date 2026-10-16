@@ -15,6 +15,8 @@ public sealed class EngineRig
     public FakePenumbraBridge Penumbra { get; } = new();
     public FakeHonorificBridge Honorific { get; } = new();
     public FakeMoodlesBridge Moodles { get; } = new();
+    public FakeCustomizePlusBridge CustomizePlus { get; } = new();
+    public FakeSimpleHeelsBridge Heels { get; } = new();
     /// <summary> Fake decal publisher; null when the rig was built without one (decal feature unavailable). </summary>
     public FakeDecalPublisher? Decals { get; }
     public AppliedStateStore Store { get; } = new();
@@ -43,12 +45,12 @@ public sealed class EngineRig
         Penumbra.ObjectCollections[0] = Collection;
 
         Redraw  = new RedrawScheduler(Penumbra, () => PlayerIndex, Log.Add);
-        Applier = new Applier(Glamourer, Penumbra, Honorific, Moodles, Decals, Store, Redraw, () => Config, () => Collection, () => Status,
+        Applier = new Applier(Glamourer, Penumbra, Honorific, Moodles, CustomizePlus, Heels, Decals, Store, Redraw, () => Config, () => Collection, () => Status,
             () => PlayerIndex, () => PlayerAddress, () => Now, Log.Add, () => DrawKey);
-        Cleanup = new CleanupService(Glamourer, Penumbra, Honorific, Moodles, Decals, Store, Redraw, Evaluator, () => Config, () => Collection,
+        Cleanup = new CleanupService(Glamourer, Penumbra, Honorific, Moodles, CustomizePlus, Heels, Decals, Store, Redraw, Evaluator, () => Config, () => Collection,
             () => PlayerIndex, () => PlayerAddress, () => Now, Log.Add);
 
-        var resolver = Compose.Build.Resolver(ComposeGlamourer);
+        var resolver = Compose.Build.Resolver(ComposeGlamourer, customizePlus: CustomizePlus);
         Core = new EngineCore(new PassCompositor(), resolver, Evaluator, Applier, Cleanup, Store, () => Config);
     }
 
@@ -109,6 +111,16 @@ public static class Designs
 
     public static void Moodle(DesignDraft d, Guid id, MoodleOp op = MoodleOp.Add)
         => d.Moodles[id] = new Field<MoodleOp>(op, Src);
+
+    /// <summary> One Customize+ bone scaled uniformly by <paramref name="scale"/>. </summary>
+    public static void Bone(DesignDraft d, string name, float scale = 1.2f)
+        => d.CustomizePlusBones[name] = new Field<CustomizePlusBone>(Bone(name, scale), Src);
+
+    public static CustomizePlusBone Bone(string name, float scale = 1.2f)
+        => new(Vector3.Zero, Vector3.Zero, new Vector3(scale), Vector3.One, false, false, false, false);
+
+    public static void Heels(DesignDraft d, float offset, bool relative = true)
+        => d.SimpleHeels = new Field<HeelsOffset>(new HeelsOffset(offset, relative), Src);
 
     /// <summary> A decal at a fixed rest-pose spot; a different <paramref name="image"/>, <paramref name="opacity"/> or <paramref name="x"/> is a different decal. </summary>
     public static void Decal(DesignDraft d, string image = "mark.png", DecalSurface surface = DecalSurface.Body, float opacity = 1f, float x = 0.1f)

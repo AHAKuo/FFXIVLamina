@@ -92,6 +92,9 @@ public sealed class Plugin : IDalamudPlugin
         var penumbra  = Track(new PenumbraBridge(PluginInterface, Log, Framework));
         var honorific = Track(new HonorificBridge(PluginInterface, Log, Framework));
         var moodles   = Track(new MoodlesBridge(PluginInterface, Log, Framework, ObjectTable));
+        var cplus     = Track(new CustomizePlusBridge(PluginInterface, Log, Framework));
+        var heels     = Track(new SimpleHeelsBridge(PluginInterface, Log, Framework));
+        var cplusCache = new CustomizePlusProfileCache(cplus);
 
         var catalog   = new GameCatalog(DataManager, Log);
         var tracker   = Track(new StateTracker(ClientState, Condition, Framework, ObjectTable, PartyList, DutyState, PlayerState, FateTable, Log,
@@ -103,7 +106,7 @@ public sealed class Plugin : IDalamudPlugin
         // Vitrine is a separate, optional plugin reached over IPC.
         var vitrine = Track(new VitrineBridge(PluginInterface, Log, Framework));
 
-        var resolver   = new LayerResolver(cache, () => vitrine, () => profiles.Config.ApplyGlamourerModAssociations, m => Log.Debug(m));
+        var resolver   = new LayerResolver(cache, () => vitrine, () => profiles.Config.ApplyGlamourerModAssociations, m => Log.Debug(m), cplusCache);
         var compositor = new PassCompositor();
 
         // Decals: live skin meshes + picking + the baking publisher. A failure here disables the layer kind, nothing else.
@@ -134,7 +137,7 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         var engine = Track(new LaminaEngine(profiles, tracker, evaluator, compositor, resolver, cache, glamourer, penumbra, honorific, moodles,
-            vitrine, Framework, ObjectTable, ClientState, Condition, catalog, Log, clock, decals, skinMeshes));
+            cplus, heels, cplusCache, vitrine, Framework, ObjectTable, ClientState, Condition, catalog, Log, clock, decals, skinMeshes));
         _engine = engine;
         _ipc    = new LaminaIpc(PluginInterface, Framework, engine, Log);
 
@@ -162,6 +165,9 @@ public sealed class Plugin : IDalamudPlugin
             Penumbra        = penumbra,
             Honorific       = honorific,
             Moodles         = moodles,
+            CustomizePlus   = cplus,
+            SimpleHeels     = heels,
+            CustomizePlusCache = cplusCache,
             Vitrine         = vitrine,
             DecalPicker     = picker,
             SkinMeshes      = skinMeshes,
@@ -179,7 +185,8 @@ public sealed class Plugin : IDalamudPlugin
 
         Log.Information($"Lamina {Services.Version} loaded: {profiles.Profiles.Count} profile(s), "
                       + $"Glamourer {(glamourer.Available ? "ok" : "missing")}, Penumbra {(penumbra.Available ? "ok" : "missing")}, "
-                      + $"Honorific {(honorific.Available ? "ok" : "missing")}, Moodles {(moodles.Available ? "ok" : "missing")}.");
+                      + $"Honorific {(honorific.Available ? "ok" : "missing")}, Moodles {(moodles.Available ? "ok" : "missing")}, "
+                      + $"Customize+ {(cplus.Available ? "ok" : "missing")}, Simple Heels {(heels.Available ? "ok" : "missing")}.");
     }
 
     private T Track<T>(T disposable) where T : IDisposable

@@ -4,13 +4,13 @@
     <Version>0.6.0.0</Version>
     <Author>ahadev</Author>
     <Name>Lamina</Name>
-    <Punchline>Layer Glamourer, Penumbra, Honorific and Moodles into virtual designs applied with a single redraw.</Punchline>
+    <Punchline>Layer Glamourer, Penumbra, Honorific, Moodles, Customize+ and Simple Heels into virtual designs applied with a single redraw.</Punchline>
     <Description>Lamina takes appearance automation further with virtual designs: layer multiple Glamourer designs, Penumbra mod states, Honorific titles and Moodles statuses through rulesets, then apply the resolved look in one pass with a single redraw.
 
-• Virtual designs combine rulesets into one final Glamourer, Penumbra, Honorific and Moodles state.
+• Virtual designs combine rulesets into one final Glamourer, Penumbra, Honorific, Moodles, Customize+ and Simple Heels state.
 • Switch between characters and situations in one click without flicker.
 • Works with Vitrine (separate, optional plugin): use its designs as layers in your passes.</Description>
-    <Tags>glamourer;penumbra;honorific;moodles;appearance;design;automation;roleplay;rp;mods</Tags>
+    <Tags>glamourer;penumbra;honorific;moodles;customize+;simpleheels;appearance;design;automation;roleplay;rp;mods</Tags>
     <RepoUrl>https://github.com/AHAKuo/FFXIVLamina</RepoUrl>
     <IconUrl>https://raw.githubusercontent.com/AHAKuo/FFXIVLamina/main/images/icon.png</IconUrl>
   </PropertyGroup>

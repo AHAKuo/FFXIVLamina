@@ -7,6 +7,8 @@ using Dalamud.Interface.Utility.Raii;
 using Lamina.Decals;
 using Lamina.Models;
 using Lamina.Persistence;
+using Lamina.Runtime;
+using Lamina.Runtime.Compose;
 using Lamina.Runtime.State;
 using Penumbra.Api.Enums;
 
@@ -436,6 +438,8 @@ internal sealed class LayerEditor
             VitrineDesignLayer.KindName  => (_s.Vitrine.Available, "Vitrine is not installed (separate plugin)."),
             HonorificLayer.KindName      => (_s.Honorific.Available, "Honorific is not loaded."),
             MoodlesLayer.KindName        => (_s.Moodles.Available, "Moodles is not loaded."),
+            CustomizePlusLayer.KindName  => (_s.CustomizePlus.Available, "Customize+ is not loaded."),
+            SimpleHeelsLayer.KindName    => (_s.SimpleHeels.Available, "Simple Heels is not loaded."),
             DecalLayer.KindName          => (_s.Penumbra.Available && _s.DecalPicker is not null && _s.DecalPublisher is not null, "Penumbra is not loaded or the decal feature could not start."),
             _                            => (false, "Unsupported layer kind."),
         };
@@ -451,9 +455,19 @@ internal sealed class LayerEditor
             AppearanceLayer a     => AppearanceSummary(a),
             HonorificLayer h      => h.Clear ? "clear title" : string.IsNullOrEmpty(h.Title) ? "(no title)" : h.Title,
             MoodlesLayer m        => $"+{m.Add.Count + m.AddPresets.Count} / −{m.Remove.Count}",
+            CustomizePlusLayer c  => CustomizePlusSummary(c),
+            SimpleHeelsLayer sh   => DesignExplainer.DescribeHeels(new HeelsOffset(sh.Offset, sh.Relative)),
             DecalLayer d          => DecalSummary(d),
             _                     => layer.Describe(),
         };
+
+    private string CustomizePlusSummary(CustomizePlusLayer c)
+    {
+        if (c.ProfileId == Guid.Empty)
+            return "(pick a profile)";
+        var name = _caches.CustomizePlusProfileName(c.ProfileId);
+        return name ?? (_s.CustomizePlus.Available ? $"(missing profile{(c.ProfileName is null ? string.Empty : $": {c.ProfileName}")})" : c.ProfileName ?? "(profile)");
+    }
 
     private string VitrineSummary(VitrineDesignLayer v)
     {
@@ -526,6 +540,8 @@ internal sealed class LayerEditor
             AppearanceLayer a     => DrawAppearance(a),
             HonorificLayer h      => DrawHonorific(h),
             MoodlesLayer m        => DrawMoodles(m),
+            CustomizePlusLayer c  => DrawCustomizePlus(c),
+            SimpleHeelsLayer sh   => DrawSimpleHeels(sh),
             DecalLayer d          => DrawDecal(profile, d),
             UnknownLayer u        => DrawUnknown(u),
             _                     => false,
@@ -1555,6 +1571,64 @@ internal sealed class LayerEditor
         if (Widgets.MultiSelect("Apply presets##md", _caches.MoodlePresets, m.AddPresets, id => id.ToString()[..8], "none")) changed = true;
         if (Widgets.MultiSelect("Remove moodles##md", _caches.Moodles, m.Remove, id => id.ToString()[..8], "none")) changed = true;
         Widgets.Hint("Adds are kept while the pass matches and removed again when it stops matching.");
+        return changed;
+    }
+
+    // ---- Customize+ / Simple Heels ------------------------------------------------------------------
+
+    private bool DrawCustomizePlus(CustomizePlusLayer c)
+    {
+        var known   = c.ProfileId != Guid.Empty && _caches.CustomizePlusProfileName(c.ProfileId) is not null;
+        var preview = c.ProfileId == Guid.Empty ? "(pick a Customize+ profile)" : known ? _caches.CustomizePlusProfileName(c.ProfileId)! : $"(missing profile{(c.ProfileName is null ? string.Empty : $": {c.ProfileName}")})";
+        var changed = false;
+        if (Widgets.SearchCombo("Profile##cplus", preview, _caches.CustomizePlusProfiles, out var picked))
+        {
+            c.ProfileId   = picked;
+            c.ProfileName = _caches.CustomizePlusProfileName(picked);
+            changed       = true;
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Refresh##cplus"))
+        {
+            _s.CustomizePlusCache.InvalidateAll();
+            _caches.MarkStale();
+            _s.Engine.Invalidate();
+        }
+        Widgets.Tooltip("Re-reads the profile list and bone edits from Customize+. Needed after you create or edit a profile there, because Customize+ only notifies Lamina about the profile active on your own character.");
+        if (c.ProfileId != Guid.Empty && !known)
+        {
+            ImGui.TextColored(Widgets.Bad, _s.CustomizePlus.Available
+                ? "Broken link: this Customize+ profile no longer exists. The layer is skipped."
+                : "Customize+ is not loaded; the profile cannot be verified and the layer is skipped.");
+            return changed;
+        }
+
+        Widgets.Hint("Lamina copies this profile's bone edits onto your character as a temporary Customize+ profile while the pass matches. The saved profile is not enabled or changed and needs no character assigned in Customize+. Templates disabled inside the profile are left out.");
+        Widgets.Hint("Bones of several Customize+ layers merge (a later pass overrides single bones). Not visible to Mare-style sync plugins: Customize+ does not report temporary profiles.");
+        return changed;
+    }
+
+    private static bool DrawSimpleHeels(SimpleHeelsLayer sh)
+    {
+        var changed = false;
+        var offset  = sh.Offset;
+        ImGui.SetNextItemWidth(160 * Widgets.Scale);
+        if (ImGui.DragFloat("Height offset##heels", ref offset, 0.001f, -2f, 2f, "%.3f"))
+        {
+            sh.Offset = Math.Clamp(offset, -2f, 2f);
+            changed   = true;
+        }
+        Widgets.Tooltip("In game units (metres). Positive raises the character. Drag, or Ctrl+click to type.");
+        ImGui.SameLine();
+        var relative = sh.Relative;
+        if (ImGui.Checkbox("Add to my current offset##heels", ref relative))
+        {
+            sh.Relative = relative;
+            changed     = true;
+        }
+        Widgets.Tooltip("On: the offset is added to the height Simple Heels already gives you (your per-footwear setting), and follows it when you change shoes.\nOff: the offset replaces it.");
+        Widgets.Hint("Registered through Simple Heels' IPC while the pass matches and removed again when it stops matching. While registered, your own Simple Heels configuration is replaced by this single offset.");
+        Widgets.Hint("Not visible to Mare-style sync plugins: Simple Heels does not report IPC registrations to them.");
         return changed;
     }
 

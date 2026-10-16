@@ -432,7 +432,7 @@ public sealed partial class LaminaWindow
 
     private bool DrawMacroOverride(Pass pass)
     {
-        Widgets.Paragraph("Restricts what this pass's Glamourer, Vitrine, Equipment Changes and Appearance Changes layers may change. Honorific, Moodles and Penumbra Adjust layers are never restricted.");
+        Widgets.Paragraph("Restricts what this pass's Glamourer, Vitrine, Equipment Changes and Appearance Changes layers may change. Honorific, Moodles, Customize+, Simple Heels and Penumbra Adjust layers are never restricted.");
         var preset  = PresetOf(pass.MacroOverride);
         var changed = false;
         foreach (var p in Enum.GetValues<MaskPreset>())
@@ -556,7 +556,7 @@ public sealed partial class LaminaWindow
         var focus   = FocusDesign(profile, group, pass);
         var reason  = !_s.Glamourer.Available ? "Glamourer is not available."
             : focus is null || focus.IsEmpty ? $"This {noun} produces nothing right now."
-            : !focus.HasGlamourerContent && !focus.HasMods ? $"This {noun} produces nothing a Glamourer design can hold (only Honorific, Moodles or decals)."
+            : !focus.HasGlamourerContent && !focus.HasMods ? $"This {noun} produces nothing a Glamourer design can hold (only Honorific, Moodles, Customize+, Simple Heels or decals)."
             : null;
 
         using (ImRaii.Disabled(reason is not null))
@@ -603,7 +603,7 @@ public sealed partial class LaminaWindow
             : $"This {noun} sets no mods.");
 
         Widgets.Paragraph($"Saves what this {noun} produces right now: equipment, customization, advanced settings and mod associations. "
-                        + "Honorific, Moodles and decals are not part of a Glamourer design.");
+                        + "Honorific, Moodles, Customize+, Simple Heels and decals are not part of a Glamourer design.");
 
         var canSave = !string.IsNullOrWhiteSpace(_saveDesignName);
         using (ImRaii.Disabled(!canSave))

@@ -27,6 +27,8 @@ public sealed record ApplyInfo(
     int ModsWritten,
     bool HonorificApplied,
     bool MoodlesApplied,
+    bool CustomizePlusApplied,
+    bool HeelsApplied,
     bool DecalsPublished,
     bool DecalsDeferred,
     bool RedrawRequested,

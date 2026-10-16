@@ -21,11 +21,11 @@ public sealed partial class LaminaWindow
         ImGui.TextUnformatted("by ahadev");
         ImGui.Spacing();
 
-        Widgets.Paragraph("Lamina automates your character's appearance through virtual designs. Instead of several rules each applying their own change and redrawing you every time, Lamina reads the game state, finds the passes that match, layers everything they want (Glamourer appearance, Penumbra mods, an Honorific title, Moodles) into one result, and applies it in a single batch with at most one redraw. No flicker, predictable layering, and a clean exit: turning Lamina off leaves your character exactly as Glamourer and Penumbra would have it.");
+        Widgets.Paragraph("Lamina automates your character's appearance through virtual designs. Instead of several rules each applying their own change and redrawing you every time, Lamina reads the game state, finds the passes that match, layers everything they want (Glamourer appearance, Penumbra mods, an Honorific title, Moodles, a Customize+ profile, a Simple Heels offset) into one result, and applies it in a single batch with at most one redraw. No flicker, predictable layering, and a clean exit: turning Lamina off leaves your character exactly as Glamourer and Penumbra would have it.");
         ImGui.Spacing();
 
         ImGui.TextUnformatted("How it fits together");
-        Widgets.Paragraph("Profile → Pass Groups (a switch: first true wins, plus Final groups layered on top by priority) → Passes (every matching one contributes; lower rows override) → Layers (a Glamourer design, a Vitrine design, Penumbra mods, a title, moodles, a decal on your skin). Lamina owns its own Penumbra collection and never touches your other collections. Vitrine is a separate, optional plugin by ahadev that organizes your mods by what they change and turns them into designs you can layer here.");
+        Widgets.Paragraph("Profile → Pass Groups (a switch: first true wins, plus Final groups layered on top by priority) → Passes (every matching one contributes; lower rows override) → Layers (a Glamourer design, a Vitrine design, Penumbra mods, a title, moodles, a Customize+ profile, a heel offset, a decal on your skin). Lamina owns its own Penumbra collection and never touches your other collections. Vitrine is a separate, optional plugin by ahadev that organizes your mods by what they change and turns them into designs you can layer here.");
         ImGui.Spacing();
 
         ImGui.TextUnformatted("Requires");
@@ -34,6 +34,8 @@ public sealed partial class LaminaWindow
         ImGui.TextUnformatted("Supports");
         DrawAboutRow(_s.Honorific);
         DrawAboutRow(_s.Moodles);
+        DrawAboutRow(_s.CustomizePlus);
+        DrawAboutRow(_s.SimpleHeels);
         DrawAboutRow(_s.Vitrine);
         ImGui.Spacing();
 

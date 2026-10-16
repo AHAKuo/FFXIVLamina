@@ -39,6 +39,9 @@ public sealed class LaminaServices
     public required IPenumbraBridge Penumbra { get; init; }
     public required IHonorificBridge Honorific { get; init; }
     public required IMoodlesBridge Moodles { get; init; }
+    public required ICustomizePlusBridge CustomizePlus { get; init; }
+    public required ISimpleHeelsBridge SimpleHeels { get; init; }
+    public required CustomizePlusProfileCache CustomizePlusCache { get; init; }
     public required IVitrineBridge Vitrine { get; init; }
 
     /// <summary> Decal picking on the posed player. Null when the decal feature could not start. </summary>

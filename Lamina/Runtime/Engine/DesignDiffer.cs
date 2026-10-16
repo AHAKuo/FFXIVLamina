@@ -12,6 +12,8 @@ namespace Lamina.Runtime.Engine;
 /// <param name="ModsChanged"> The mod section differs. </param>
 /// <param name="HonorificChanged"> The title differs. </param>
 /// <param name="MoodlesChanged"> Something must be added or removed on Moodles. </param>
+/// <param name="CustomizePlusChanged"> The Customize+ bone set differs (or the design lost it). </param>
+/// <param name="HeelsChanged"> The Simple Heels offset differs (or the design lost it). </param>
 /// <param name="DecalsChanged"> The decal list differs (or the design lost its decals). </param>
 /// <param name="MoodleAdds"> Moodles / presets to add now (ids not yet added by Lamina). </param>
 /// <param name="MoodleRemoves"> Moodles to remove now: previously added ones the design no longer wants plus explicit removes. </param>
@@ -23,20 +25,22 @@ public sealed record DesignDelta(
     bool ModsChanged,
     bool HonorificChanged,
     bool MoodlesChanged,
+    bool CustomizePlusChanged,
+    bool HeelsChanged,
     bool DecalsChanged,
     IReadOnlyList<(Guid Id, MoodleOp Op)> MoodleAdds,
     IReadOnlyList<Guid> MoodleRemoves,
     IReadOnlyList<Guid> PresetRemoves)
 {
     /// <summary>
-    /// Only Penumbra mod changes need a redraw here (Glamourer, Honorific and Moodles apply live). A decal change needs one
+    /// Only Penumbra mod changes need a redraw here (Glamourer, Honorific, Moodles, Customize+ and Simple Heels apply live). A decal change needs one
     /// too, but only once its bake is in place: the engine requests that redraw when the publisher completes.
     /// </summary>
     public bool RequiresRedraw
         => ModsChanged;
 
     /// <summary> A delta that does nothing. </summary>
-    public static readonly DesignDelta None = new(true, false, false, false, false, false, false,
+    public static readonly DesignDelta None = new(true, false, false, false, false, false, false, false, false,
         Array.Empty<(Guid, MoodleOp)>(), Array.Empty<Guid>(), Array.Empty<Guid>());
 }
 
@@ -58,10 +62,13 @@ public static class DesignDiffer
         var nextGlamourer = next.HasGlamourerContent ? GlamourerHash(next) : null;
         var nextMods      = next.HasMods ? ModsHash(next) : null;
         var nextDecals    = next.HasDecals ? DecalsHash(next) : null;
+        var nextBones     = next.HasCustomizePlus ? CustomizePlusHash(next) : null;
 
         var glamourerChanged = force || nextGlamourer != applied.GlamourerHash;
         var modsChanged      = force || nextMods != applied.ModsHash;
         var honorificChanged = force || !HonorificEquals(applied.HonorificSet, next.Honorific?.Value);
+        var bonesChanged     = force || nextBones != applied.CustomizePlusHash;
+        var heelsChanged     = force || applied.HeelsSet != next.SimpleHeels?.Value;
         var decalsChanged    = force || nextDecals != applied.DecalsHash;
 
         var wantedAdds = next.Moodles.Where(kv => kv.Value.Value != MoodleOp.Remove)
@@ -82,8 +89,9 @@ public static class DesignDiffer
         var presetRemoves = applied.PresetsApplied.Where(id => !wantedPresets.Contains(id)).ToList();
 
         var moodlesChanged = adds.Count > 0 || removes.Count > 0 || presetRemoves.Count > 0;
-        var noChange       = !glamourerChanged && !modsChanged && !honorificChanged && !moodlesChanged && !decalsChanged;
-        return new DesignDelta(noChange, force, glamourerChanged, modsChanged, honorificChanged, moodlesChanged, decalsChanged, adds, removes, presetRemoves);
+        var noChange       = !glamourerChanged && !modsChanged && !honorificChanged && !moodlesChanged && !bonesChanged && !heelsChanged && !decalsChanged;
+        return new DesignDelta(noChange, force, glamourerChanged, modsChanged, honorificChanged, moodlesChanged, bonesChanged, heelsChanged, decalsChanged,
+            adds, removes, presetRemoves);
     }
 
     /// <summary> Stable hash of everything that goes to Glamourer. </summary>
@@ -110,6 +118,24 @@ public static class DesignDiffer
             sb.Append("D:").Append(c.ContentKey()).Append(';');
 
         return Hash(sb);
+    }
+
+    /// <summary> Stable hash of the Customize+ bone set (what the temporary profile will contain). </summary>
+    public static string CustomizePlusHash(VirtualDesign d)
+    {
+        var sb = new StringBuilder(512);
+        foreach (var (k, v) in d.CustomizePlusBones.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            var b = v.Value;
+            sb.Append("B+:").Append(k).Append('=')
+              .Append(Vec(b.Translation)).Append('/').Append(Vec(b.Rotation)).Append('/').Append(Vec(b.Scaling)).Append('/').Append(Vec(b.ChildScaling))
+              .Append('/').Append(b.ChildScaleIndependent).Append(b.PropagateTranslation).Append(b.PropagateRotation).Append(b.PropagateScale).Append(';');
+        }
+
+        return Hash(sb);
+
+        static string Vec(System.Numerics.Vector3 v)
+            => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{v.X},{v.Y},{v.Z}");
     }
 
     /// <summary> Stable hash of the decal list, order preserving: decals paint in order, so the same set in another order is another bake. </summary>

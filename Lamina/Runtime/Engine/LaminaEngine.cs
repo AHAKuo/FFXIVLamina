@@ -36,6 +36,9 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     private readonly IPenumbraBridge _penumbra;
     private readonly IHonorificBridge _honorific;
     private readonly IMoodlesBridge _moodles;
+    private readonly ICustomizePlusBridge _customizePlus;
+    private readonly ISimpleHeelsBridge _heels;
+    private readonly CustomizePlusProfileCache _customizePlusCache;
     private readonly IVitrineBridge _vitrine;
     private readonly IDecalPublisher? _decals;
     private readonly ISkinMeshProvider? _meshes;
@@ -79,7 +82,8 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     /// </summary>
     public LaminaEngine(ProfileStore profiles, StateTracker tracker, ConditionEvaluator evaluator, PassCompositor compositor,
         LayerResolver resolver, GlamourerDesignCache cache, IGlamourerBridge glamourer, IPenumbraBridge penumbra,
-        IHonorificBridge honorific, IMoodlesBridge moodles, IVitrineBridge vitrine, IFramework framework, IObjectTable objects,
+        IHonorificBridge honorific, IMoodlesBridge moodles, ICustomizePlusBridge customizePlus, ISimpleHeelsBridge heels,
+        CustomizePlusProfileCache customizePlusCache, IVitrineBridge vitrine, IFramework framework, IObjectTable objects,
         IClientState clientState, ICondition condition, GameCatalog catalog, IPluginLog log, TickClock? clock = null,
         IDecalPublisher? decalPublisher = null, ISkinMeshProvider? skinMeshes = null)
     {
@@ -93,6 +97,9 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _penumbra    = penumbra;
         _honorific   = honorific;
         _moodles     = moodles;
+        _customizePlus      = customizePlus;
+        _heels              = heels;
+        _customizePlusCache = customizePlusCache;
         _vitrine     = vitrine;
         _decals      = decalPublisher;
         _meshes      = skinMeshes;
@@ -105,9 +112,9 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _clock       = clock ?? new TickClock();
 
         _redraw  = new RedrawScheduler(_penumbra, LocalPlayerIndex, m => _log.Debug(m));
-        _applier = new Applier(_glamourer, _penumbra, _honorific, _moodles, _decals, _store, _redraw, () => _profiles.Config, () => CollectionId,
+        _applier = new Applier(_glamourer, _penumbra, _honorific, _moodles, _customizePlus, _heels, _decals, _store, _redraw, () => _profiles.Config, () => CollectionId,
             () => _collectionStatus, LocalPlayerIndex, LocalPlayerAddress, _clock.Read, m => _log.Debug(m), DrawObjectKey);
-        _cleanup = new CleanupService(_glamourer, _penumbra, _honorific, _moodles, _decals, _store, _redraw, _evaluator, () => _profiles.Config,
+        _cleanup = new CleanupService(_glamourer, _penumbra, _honorific, _moodles, _customizePlus, _heels, _decals, _store, _redraw, _evaluator, () => _profiles.Config,
             () => CollectionId, LocalPlayerIndex, LocalPlayerAddress, _clock.Read, m => _log.Information(m));
         _core = new EngineCore(_compositor, _resolver, _evaluator, _applier, _cleanup, _store, () => _profiles.Config);
         if (_decals is not null)
@@ -122,6 +129,10 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _penumbra.AvailabilityChanged  += OnPenumbraAvailability;
         _honorific.AvailabilityChanged += Invalidate;
         _moodles.AvailabilityChanged   += Invalidate;
+        _customizePlus.AvailabilityChanged += OnCustomizePlusAvailability;
+        _customizePlus.ProfilesChanged     += OnCustomizePlusProfilesChanged;
+        _heels.AvailabilityChanged         += OnHeelsAvailability;
+        _heels.LocalOffsetChanged          += OnHeelsLocalOffsetChanged;
         _glamourer.StateFinalized      += OnStateFinalized;
         if (_moodles is IMoodlesStatusEvents moodleEvents)
             moodleEvents.StatusManagerModified += OnMoodlesStatusManagerModified;
@@ -224,6 +235,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     public void RequestReapply()
     {
         _cache.InvalidateAll();
+        _customizePlusCache.InvalidateAll();
         _vitrine.RefreshDesigns();
         _dirty = true;
         _force = true;
@@ -286,6 +298,8 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
           .Append(Flag("Penumbra", _penumbra.Available)).Append(", ")
           .Append(Flag("Honorific", _honorific.Available)).Append(", ")
           .Append(Flag("Moodles", _moodles.Available)).Append(", ")
+          .Append(Flag("Customize+", _customizePlus.Available)).Append(", ")
+          .Append(Flag("Simple Heels", _heels.Available)).Append(", ")
           .AppendLine(_decals is null ? "Decals (unavailable)" : "Decals");
         sb.Append("State: ").Append(_catalog.TerritoryName(s.TerritoryId)).Append(" (#").Append(s.TerritoryId).Append(") · ")
           .Append(_catalog.WeatherName(s.WeatherId)).Append(" · ET ").Append(s.EorzeaTime.ToString(@"hh\:mm")).Append(" · ")
@@ -583,6 +597,57 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         }
     }
 
+    private void OnCustomizePlusAvailability()
+    {
+        _customizePlusCache.InvalidateAll();
+        if (!_customizePlus.Available)
+        {
+            // The temporary profile died with the plugin; nothing to undo, but the next apply must set it again.
+            _store.CustomizePlusHash        = null;
+            _store.CustomizePlusTemporaryId = null;
+        }
+
+        // Either way the design hash no longer tells the whole story (the section was skipped or lost): diff again.
+        _store.DesignHash = null;
+        _dirty            = true;
+    }
+
+    /// <summary> Customize+ reported a profile change: its bones may differ, so the cached profiles are dropped and the design re-evaluated. </summary>
+    private void OnCustomizePlusProfilesChanged()
+    {
+        _customizePlusCache.InvalidateAll();
+        _dirty = true;
+    }
+
+    private void OnHeelsAvailability()
+    {
+        if (!_heels.Available)
+        {
+            // Simple Heels forgets IPC registrations when it unloads; re-register on the next apply.
+            _store.HeelsSet  = null;
+            _store.HeelsBase = null;
+        }
+
+        _store.DesignHash = null;
+        _dirty            = true;
+    }
+
+    /// <summary>
+    /// The player's own Simple Heels offset changed (footwear swap, edited configuration). A relative registration was built on the
+    /// old value, so it is forgotten and the next evaluation registers again on the new base. Absolute registrations are unaffected.
+    /// </summary>
+    private void OnHeelsLocalOffsetChanged(float offset)
+    {
+        if (_store.HeelsSet is not { Relative: true } || _store.HeelsBase is not { } baseOffset || MathF.Abs(baseOffset - offset) < 0.0001f)
+            return;
+
+        _log.Debug($"Simple Heels: player offset changed {baseOffset:0.###} → {offset:0.###}; re-registering the relative offset.");
+        _store.HeelsSet   = null;
+        _store.HeelsBase  = null;
+        _store.DesignHash = null;
+        _dirty            = true;
+    }
+
     private void OnPenumbraAvailability()
     {
         if (!_penumbra.Available)
@@ -771,6 +836,10 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         _penumbra.AvailabilityChanged  -= OnPenumbraAvailability;
         _honorific.AvailabilityChanged -= Invalidate;
         _moodles.AvailabilityChanged   -= Invalidate;
+        _customizePlus.AvailabilityChanged -= OnCustomizePlusAvailability;
+        _customizePlus.ProfilesChanged     -= OnCustomizePlusProfilesChanged;
+        _heels.AvailabilityChanged         -= OnHeelsAvailability;
+        _heels.LocalOffsetChanged          -= OnHeelsLocalOffsetChanged;
         _glamourer.StateFinalized      -= OnStateFinalized;
         if (_moodles is IMoodlesStatusEvents moodleEvents)
             moodleEvents.StatusManagerModified -= OnMoodlesStatusManagerModified;

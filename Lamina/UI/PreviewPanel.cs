@@ -128,6 +128,10 @@ internal sealed class PreviewPanel
             var name = _caches.Moodles.FirstOrDefault(m => m.Id == id).Name ?? _caches.MoodlePresets.FirstOrDefault(m => m.Id == id).Name ?? id.ToString()[..8] + "…";
             yield return ($"Moodle: {name}", Widgets.Humanize(f.Value.ToString()), f.Source);
         }
+        foreach (var group in d.CustomizePlusBones.GroupBy(kv => kv.Value.Source).OrderBy(g => g.Key.Note, StringComparer.Ordinal))
+            yield return ("Customize+", $"{group.Count()} bone(s)", group.Key);
+        if (d.SimpleHeels is { } heels)
+            yield return ("Simple Heels", DesignExplainer.DescribeHeels(heels.Value), heels.Source);
         foreach (var f in d.Decals)
         {
             var p     = f.Value.Placement;

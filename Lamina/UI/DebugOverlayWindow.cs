@@ -54,6 +54,7 @@ public sealed class DebugOverlayWindow : Window
             ImGui.TextUnformatted($"Matched passes: {(design.MatchedPassIds.Count == 0 ? "(none)" : string.Join(", ", design.MatchedPassIds.Select(PassName)))}");
             Widgets.Hint($"{design.Items.Count + design.Stains.Count + design.Customize.Count + design.Meta.Count + design.Parameters.Count} glamourer field(s) · {design.Mods.Count} mod(s)"
                        + (design.Honorific is not null ? " · title" : string.Empty) + (design.Moodles.Count > 0 ? $" · {design.Moodles.Count} moodle op(s)" : string.Empty)
+                       + (design.HasCustomizePlus ? $" · {design.CustomizePlusBones.Count} bone(s)" : string.Empty) + (design.SimpleHeels is not null ? " · heels" : string.Empty)
                        + $" · hash {design.ContentHash[..8]}");
         }
         if (engine.LastReport is { SkippedLayers.Count: > 0 } report)
@@ -68,6 +69,8 @@ public sealed class DebugOverlayWindow : Window
                                 + (apply.ModsApplied ? $"mods({apply.ModsWritten}) " : string.Empty)
                                 + (apply.HonorificApplied ? "honorific " : string.Empty)
                                 + (apply.MoodlesApplied ? "moodles " : string.Empty)
+                                + (apply.CustomizePlusApplied ? "customize+ " : string.Empty)
+                                + (apply.HeelsApplied ? "heels " : string.Empty)
                                 + (apply.RedrawRequested ? (apply.RedrawDeferred ? "redraw-deferred" : "redraw") : "no-redraw"));
             foreach (var p in apply.Problems)
                 ImGui.TextColored(Widgets.Warn, "• " + p);

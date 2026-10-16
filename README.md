@@ -25,6 +25,8 @@ Updates arrive through the same installer like any other plugin. The repository 
 ## Supports
 - Honorific.
 - Moodles.
+- Customize+ (a saved profile as a layer, applied as a temporary profile).
+- Simple Heels (a height offset as a layer, registered over IPC).
 
 ## Features
 - Penumbra mods enable/disable state handling based on virtual designs (auto-resolved).
@@ -33,12 +35,15 @@ Updates arrive through the same installer like any other plugin. The repository 
 - Penumbra Adjust with per-setting "applies" checkboxes: a pass can change one option group of a mod an earlier pass enabled; everything unticked is inherited from the earlier pass or the Lamina collection.
 - Application of Honorific titles.
 - Application of Moodles states.
+- Customize+ layer: pick one of your saved Customize+ profiles; Lamina applies its bone edits as a temporary profile while the pass matches and removes it again afterwards. Bones of several Customize+ layers merge, so a later pass can override single bones.
+- Simple Heels layer: a height offset, either added to the offset Simple Heels already gives you (default, follows your footwear) or replacing it. Registered over IPC while the pass matches.
+  Note: Customize+ does not report temporary profiles and Simple Heels does not report IPC registrations to Mare-style sync plugins, so other players do not see these two layers yet.
 - Vitrine integration (optional): use designs from the separate Vitrine plugin as layers, with a per-layer slot mask to combine pieces of several designs and a "clear other slots" switch.
 - Equipment Cleanse layer: empties every gear slot (weapons stay) so the outfit layers after it start from a bare body.
 - Decal layer: a PNG or JPG placed on your character's skin by clicking it in the game world, with size, rotation and opacity; it is baked into the body or face texture and shown through a temporary Penumbra mod in the Lamina collection.
 
 ## Virtual Designs
-A Virtual Design is a design created by combining multiple different rulesets and combining the resulting Glamourer, Honorific, Moodles, and Penumbra statuses into one final design. This design is applied in one pass with efficient handling to prevent slow flickers or heavy condition swapping. The character is drawn ONCE after the virtual design is determined.
+A Virtual Design is a design created by combining multiple different rulesets and combining the resulting Glamourer, Honorific, Moodles, Customize+, Simple Heels and Penumbra statuses into one final design. This design is applied in one pass with efficient handling to prevent slow flickers or heavy condition swapping. The character is drawn ONCE after the virtual design is determined.
 
 ## Works with Vitrine (separate plugin, optional)
 Vitrine is ahadev's standalone mod browser: it organizes your Penumbra mods by what they change, shows their display photos, lets you try a mod on your character (mod + a full set of its affected items) and turns each mod into a design with your baseline settings. Lamina does not need it to run. When Vitrine is installed, Lamina finds it automatically and its designs become a layer type ("Vitrine Design") you can use in any pass: the layer carries the design's mod settings (overridable per pass) and the pieces the design equips (its affected slots). "Override slots" narrows those pieces per layer, so one pass can take the body from one Vitrine design and the boots from another; the mods themselves are always applied in full. "Clear other slots" (the design's own flag, overridable per layer) empties every gear slot the layer does not fill so an earlier outfit does not bleed through. Needs Vitrine 0.3 or newer for pieces, 0.4 for the clear flag. Repository: https://github.com/AHAKuo/FFXIVVitrine

@@ -69,6 +69,22 @@ public sealed class AppliedStateStore
     /// <summary> The Honorific title Lamina set (including an explicit clear), or null when Lamina never touched the title. </summary>
     public HonorificTitle? HonorificSet { get; set; }
 
+    /// <summary> Hash of the Customize+ bone set Lamina last pushed as a temporary profile. Null when Lamina holds no temporary profile. </summary>
+    public string? CustomizePlusHash { get; set; }
+
+    /// <summary> True while Lamina's temporary Customize+ profile is on the target. </summary>
+    public bool CustomizePlusApplied
+        => CustomizePlusHash is not null;
+
+    /// <summary> Id Customize+ gave the temporary profile, informational. </summary>
+    public Guid? CustomizePlusTemporaryId { get; set; }
+
+    /// <summary> The Simple Heels offset Lamina registered, or null when Lamina holds no registration. </summary>
+    public HeelsOffset? HeelsSet { get; set; }
+
+    /// <summary> The player's own offset a relative <see cref="HeelsSet"/> was added to; null for an absolute one. </summary>
+    public float? HeelsBase { get; set; }
+
     /// <summary> Moodle ids Lamina added (statuses only). </summary>
     public HashSet<Guid> MoodlesAdded { get; } = new();
 
@@ -84,7 +100,7 @@ public sealed class AppliedStateStore
     /// <summary> True while Lamina has anything applied anywhere that a cleanup would need to undo. </summary>
     public bool AnythingApplied
         => DesignHash is not null || ModsApplied || GlamourerApplied || HonorificSet is not null
-         || MoodlesAdded.Count > 0 || PresetsApplied.Count > 0 || DecalsApplied;
+         || MoodlesAdded.Count > 0 || PresetsApplied.Count > 0 || DecalsApplied || CustomizePlusApplied || HeelsSet is not null;
 
     /// <summary>
     /// Forgets everything applied. With <paramref name="keepGlamourer"/> the Glamourer hash survives: used on profile switches,
@@ -100,6 +116,10 @@ public sealed class AppliedStateStore
         ModsWritten   = 0;
         ForgetDecals();
         HonorificSet  = null;
+        CustomizePlusHash        = null;
+        CustomizePlusTemporaryId = null;
+        HeelsSet      = null;
+        HeelsBase     = null;
         MoodlesAdded.Clear();
         PresetsApplied.Clear();
         LastApplyUtc = null;

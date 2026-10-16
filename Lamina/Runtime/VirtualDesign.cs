@@ -26,6 +26,20 @@ public sealed record HonorificTitle(bool Clear, string? Title, bool IsPrefix, Ve
     public static readonly HonorificTitle Cleared = new(true, null, false, null, null);
 }
 
+/// <summary>
+/// One Customize+ bone edit, as the Customize+ IPC profile JSON carries it (<c>IPCBoneTransform</c>): translation, rotation
+/// (degrees), scaling, child scaling and the flags. Bones merge by name, so a later pass can override one bone of an earlier
+/// pass's profile.
+/// </summary>
+public sealed record CustomizePlusBone(Vector3 Translation, Vector3 Rotation, Vector3 Scaling, Vector3 ChildScaling,
+    bool ChildScaleIndependent, bool PropagateTranslation, bool PropagateRotation, bool PropagateScale);
+
+/// <summary>
+/// Simple Heels height offset to register for the player. <paramref name="Relative"/> adds the offset to the player's own
+/// resolved Simple Heels offset (their per-footwear configuration) instead of replacing it.
+/// </summary>
+public sealed record HeelsOffset(float Offset, bool Relative);
+
 public enum MoodleOp
 {
     Add,
@@ -153,11 +167,15 @@ public sealed class DesignDraft
     public Dictionary<Guid, Field<MoodleOp>> Moodles { get; } = new();
     /// <summary> Decals in bake order: earlier entries are painted first, later ones land on top. Not maskable, like Honorific and Moodles. </summary>
     public List<Field<DecalSpec>> Decals { get; } = new();
+    /// <summary> Customize+ bone name → edit. Merged per bone; applied as one temporary profile. Not maskable. </summary>
+    public Dictionary<string, Field<CustomizePlusBone>> CustomizePlusBones { get; } = new(StringComparer.Ordinal);
+    /// <summary> Simple Heels offset; later passes replace earlier ones. Not maskable. </summary>
+    public Field<HeelsOffset>? SimpleHeels { get; set; }
 
     public bool IsEmpty
         => Items.Count == 0 && Stains.Count == 0 && Crests.Count == 0 && Bonus.Count == 0 && Customize.Count == 0
          && ModelId is null && Meta.Count == 0 && Parameters.Count == 0 && Materials.Count == 0 && Mods.Count == 0
-         && Honorific is null && Moodles.Count == 0 && Decals.Count == 0;
+         && Honorific is null && Moodles.Count == 0 && Decals.Count == 0 && CustomizePlusBones.Count == 0 && SimpleHeels is null;
 
     /// <summary> Adds a mod contribution, merging per part when the mod is already present. </summary>
     public void AddMod(ModContribution contribution)
@@ -185,6 +203,8 @@ public sealed class DesignDraft
         foreach (var (k, v) in top.Moodles) Moodles[k] = v;
         // Decals accumulate instead of replacing: a later pass paints its decals on top of the earlier ones.
         Decals.AddRange(top.Decals);
+        foreach (var (k, v) in top.CustomizePlusBones) CustomizePlusBones[k] = v;
+        if (top.SimpleHeels is { } heels) SimpleHeels = heels;
     }
 
     /// <summary> Returns a copy with everything the mask does not allow removed. </summary>
@@ -209,10 +229,12 @@ public sealed class DesignDraft
         }
         if (mask.Mods)
             foreach (var (_, v) in Mods) result.AddMod(v);
-        // Honorific, Moodles and decals are never masked (the mask only applies to Glamourer / Vitrine / Equipment / Appearance layers).
+        // Honorific, Moodles, decals, Customize+ and Simple Heels are never masked (the mask only applies to Glamourer / Vitrine / Equipment / Appearance layers).
         if (Honorific is { } title) result.Honorific = title;
         foreach (var (k, v) in Moodles) result.Moodles[k] = v;
         result.Decals.AddRange(Decals);
+        foreach (var (k, v) in CustomizePlusBones) result.CustomizePlusBones[k] = v;
+        if (SimpleHeels is { } heels) result.SimpleHeels = heels;
         return result;
     }
 
@@ -223,7 +245,7 @@ public sealed class DesignDraft
 
 /// <summary>
 /// The final, immutable result for one target after all passes and final groups merged.
-/// Everything that will be sent to Glamourer, Penumbra, Honorific and Moodles. Every field is optional: unset = passthrough.
+/// Everything that will be sent to Glamourer, Penumbra, Honorific, Moodles, Customize+ and Simple Heels. Every field is optional: unset = passthrough.
 /// </summary>
 public sealed class VirtualDesign
 {
@@ -244,6 +266,8 @@ public sealed class VirtualDesign
         Honorific           = draft.Honorific;
         Moodles             = new Dictionary<Guid, Field<MoodleOp>>(draft.Moodles);
         Decals              = draft.Decals.ToList();
+        CustomizePlusBones  = new Dictionary<string, Field<CustomizePlusBone>>(draft.CustomizePlusBones, StringComparer.Ordinal);
+        SimpleHeels         = draft.SimpleHeels;
         ProfileId           = profileId;
         ActiveGroupId       = activeGroupId;
         ActiveFinalGroupIds = activeFinalGroupIds;
@@ -267,6 +291,10 @@ public sealed class VirtualDesign
     public IReadOnlyDictionary<Guid, Field<MoodleOp>> Moodles { get; }
     /// <summary> Decals in bake order (see <see cref="DesignDraft.Decals"/>). </summary>
     public IReadOnlyList<Field<DecalSpec>> Decals { get; }
+    /// <summary> Customize+ bone name → edit, the content of the temporary profile Lamina sets. </summary>
+    public IReadOnlyDictionary<string, Field<CustomizePlusBone>> CustomizePlusBones { get; }
+    /// <summary> Simple Heels offset to register, or null to leave Simple Heels alone. </summary>
+    public Field<HeelsOffset>? SimpleHeels { get; }
 
     // ---- metadata ----
     public Guid ProfileId { get; }
@@ -288,8 +316,11 @@ public sealed class VirtualDesign
     public bool HasDecals
         => Decals.Count > 0;
 
+    public bool HasCustomizePlus
+        => CustomizePlusBones.Count > 0;
+
     public bool IsEmpty
-        => !HasGlamourerContent && !HasMods && Honorific is null && Moodles.Count == 0 && !HasDecals;
+        => !HasGlamourerContent && !HasMods && Honorific is null && Moodles.Count == 0 && !HasDecals && !HasCustomizePlus && SimpleHeels is null;
 }
 
 /// <summary>
@@ -316,6 +347,8 @@ public static class DesignHasher
             sb.Append("H:").Append(h.Value.Clear).Append(',').Append(h.Value.Title).Append(',').Append(h.Value.IsPrefix).Append(',').Append(h.Value.Color).Append(',').Append(h.Value.Glow).Append(';');
         foreach (var (k, v) in d.Moodles.OrderBy(kv => kv.Key)) sb.Append("O:").Append(k).Append('=').Append(v.Value).Append(';');
         foreach (var f in d.Decals) sb.Append("L:").Append(f.Value.ContentKey()).Append(';');
+        foreach (var (k, v) in d.CustomizePlusBones.OrderBy(kv => kv.Key, StringComparer.Ordinal)) sb.Append("B+:").Append(k).Append('=').Append(v.Value).Append(';');
+        if (d.SimpleHeels is { } heels) sb.Append("SH:").Append(heels.Value.Offset.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(',').Append(heels.Value.Relative).Append(';');
 
         var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sb.ToString()));
         return Convert.ToHexString(bytes, 0, 16);

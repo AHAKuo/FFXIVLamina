@@ -151,8 +151,9 @@ public static class Build
         return g;
     }
 
-    public static LayerResolver Resolver(FakeGlamourerBridge bridge, Lamina.Tests.Fakes.FakeVitrineBridge? vitrine = null, bool applyMods = true)
-        => new(new GlamourerDesignCache(bridge), () => vitrine, () => applyMods);
+    public static LayerResolver Resolver(FakeGlamourerBridge bridge, Lamina.Tests.Fakes.FakeVitrineBridge? vitrine = null, bool applyMods = true,
+        Lamina.Tests.Fakes.FakeCustomizePlusBridge? customizePlus = null)
+        => new(new GlamourerDesignCache(bridge), () => vitrine, () => applyMods, null, customizePlus is null ? null : new CustomizePlusProfileCache(customizePlus));
 
     public static string FixturePath(string name)
         => Path.Combine(AppContext.BaseDirectory, "Compose", "Fixtures", name);

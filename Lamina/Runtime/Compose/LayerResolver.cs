@@ -15,17 +15,21 @@ public sealed class LayerResolver
     private readonly Func<IVitrineBridge?> _vitrine;
     private readonly Func<bool> _applyGlamourerModAssociations;
     private readonly Action<string>? _log;
+    private readonly CustomizePlusProfileCache? _customizePlus;
 
     /// <param name="cache"> Glamourer design cache. </param>
     /// <param name="vitrine"> Vitrine bridge accessor; may return null when no bridge exists. Designs come from the separate Vitrine plugin over IPC. </param>
     /// <param name="applyGlamourerModAssociations"> Reads LaminaConfig.ApplyGlamourerModAssociations. </param>
     /// <param name="log"> Optional debug logger for non-fatal oddities (e.g. a Moodle both added and removed). </param>
-    public LayerResolver(GlamourerDesignCache cache, Func<IVitrineBridge?> vitrine, Func<bool> applyGlamourerModAssociations, Action<string>? log = null)
+    /// <param name="customizePlus"> Customize+ profile cache; null when no bridge exists (Customize+ layers are then skipped as "not installed"). </param>
+    public LayerResolver(GlamourerDesignCache cache, Func<IVitrineBridge?> vitrine, Func<bool> applyGlamourerModAssociations, Action<string>? log = null,
+        CustomizePlusProfileCache? customizePlus = null)
     {
         _cache                         = cache;
         _vitrine                       = vitrine;
         _applyGlamourerModAssociations = applyGlamourerModAssociations;
         _log                           = log;
+        _customizePlus                 = customizePlus;
     }
 
     /// <summary> The design cache this resolver reads from. </summary>
@@ -64,6 +68,10 @@ public sealed class LayerResolver
                 return ResolveHonorific(h, source);
             case MoodlesLayer m:
                 return ResolveMoodles(m, source);
+            case CustomizePlusLayer c:
+                return ResolveCustomizePlus(c, source, out skipReason);
+            case SimpleHeelsLayer sh:
+                return ResolveSimpleHeels(sh, source);
             case DecalLayer d:
                 return ResolveDecal(d, source, out skipReason);
             default:
@@ -282,6 +290,47 @@ public sealed class LayerResolver
 
         return draft;
     }
+
+    /// <summary>
+    /// Customize+: the profile's bones (enabled templates merged by Customize+) land in the draft one by one, so later passes
+    /// override single bones of earlier ones. The profile is read through the cache; a missing profile or plugin skips the layer.
+    /// </summary>
+    private DesignDraft? ResolveCustomizePlus(CustomizePlusLayer layer, Provenance source, out string? skipReason)
+    {
+        skipReason = null;
+        if (layer.ProfileId == Guid.Empty)
+        {
+            skipReason = "no Customize+ profile selected";
+            return null;
+        }
+
+        if (_customizePlus is null || !_customizePlus.Bridge.Available)
+        {
+            skipReason = "Customize+ is not installed";
+            return null;
+        }
+
+        var bones = _customizePlus.GetBones(layer.ProfileId);
+        if (bones is null)
+        {
+            skipReason = $"Customize+ profile {layer.ProfileName ?? layer.ProfileId.ToString()} not found";
+            return null;
+        }
+
+        if (bones.Count == 0)
+        {
+            skipReason = "Customize+ profile has no bone edits";
+            return null;
+        }
+
+        var draft = new DesignDraft();
+        foreach (var (name, bone) in bones)
+            draft.CustomizePlusBones[name] = new Field<CustomizePlusBone>(bone, source);
+        return draft;
+    }
+
+    private static DesignDraft ResolveSimpleHeels(SimpleHeelsLayer layer, Provenance source)
+        => new() { SimpleHeels = new Field<HeelsOffset>(new HeelsOffset(layer.Offset, layer.Relative), source) };
 
     /// <summary>
     /// Decal: one frozen <see cref="DecalSpec"/> per complete layer (image chosen and placed). The placement is cloned so later

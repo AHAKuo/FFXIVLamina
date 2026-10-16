@@ -2,3 +2,5 @@
 - Penumbra.
 - Moodles.
 - Honorific.
+- CustomizePlus (Aether-Tools/CustomizePlus, IPC contracts in `CustomizePlus/CustomizePlus/Api/`).
+- SimpleHeels (Caraxi/SimpleHeels, IPC provider in `SimpleHeels/SimpleHeels/ApiProvider.cs`).

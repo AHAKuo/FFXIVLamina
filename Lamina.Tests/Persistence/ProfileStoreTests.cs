@@ -406,7 +406,7 @@ public class ProfileTransferTests
                 new GlamourerLayer { DesignId = Guid.NewGuid() },
                 new VitrineDesignLayer { VitrineDesignId = Guid.NewGuid() },
                 new PenumbraAdjustLayer { Mods = { new ModState { ModDirectory = "Missing Mod" }, new ModState { ModDirectory = "Present" } } },
-                new UnknownLayer { UnknownKind = "CustomizePlus", RawJson = """{"kind":"CustomizePlus"}""" },
+                new UnknownLayer { UnknownKind = "FutureKind", RawJson = """{"kind":"FutureKind"}""" },
             },
         };
         var resolvers = new ReferenceResolvers(
@@ -421,7 +421,7 @@ public class ProfileTransferTests
         Assert.Contains(result.Warnings, w => w.Contains("Vitrine design"));
         Assert.Contains(result.Warnings, w => w.Contains("Missing Mod"));
         Assert.DoesNotContain(result.Warnings, w => w.Contains("'Present'"));
-        Assert.Contains(result.Warnings, w => w.Contains("CustomizePlus"));
+        Assert.Contains(result.Warnings, w => w.Contains("FutureKind"));
         Assert.Contains(result.Warnings, w => w.Contains("Teleport"));
 
         Assert.Empty(ProfileTransfer.Import(ProfileTransfer.ExportJson(pass)).Warnings.Where(w => w.Contains("design")));
@@ -468,9 +468,9 @@ public class ProfileTransferTests
         Assert.Empty(ProfileTransfer.ImportLayer(ProfileTransfer.ExportJson(new GlamourerLayer { DesignId = Guid.NewGuid() })).Warnings);
 
         // A kind from a newer version is kept verbatim and flagged.
-        var unknown = ProfileTransfer.ImportLayer("""{ "kind": "CustomizePlus", "scale": 2 }""");
-        Assert.Equal("CustomizePlus", Assert.IsType<UnknownLayer>(unknown.Layer).UnknownKind);
-        Assert.Contains(unknown.Warnings, w => w.Contains("CustomizePlus"));
+        var unknown = ProfileTransfer.ImportLayer("""{ "kind": "FutureKind", "scale": 2 }""");
+        Assert.Equal("FutureKind", Assert.IsType<UnknownLayer>(unknown.Layer).UnknownKind);
+        Assert.Contains(unknown.Warnings, w => w.Contains("FutureKind"));
     }
 
     [Fact]

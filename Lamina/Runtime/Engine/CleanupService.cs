@@ -9,7 +9,7 @@ namespace Lamina.Runtime.Engine;
 /// <summary>
 /// Undoes only Lamina's own changes (TDD 7.2 Cleanup / Revert): removes Lamina's temporary Penumbra settings and its decal mod, unlocks and
 /// reverts the Glamourer state (to the game state or automation, per <see cref="LaminaConfig.NoRuleFallback"/>), clears the Honorific title if Lamina set one, removes the Moodles and presets
-/// Lamina applied, then asks for one redraw. Lamina never touches collection assignments: the player manages those in Penumbra.
+/// Lamina applied, deletes Lamina's temporary Customize+ profile and its Simple Heels registration, then asks for one redraw. Lamina never touches collection assignments: the player manages those in Penumbra.
 /// </summary>
 public sealed class CleanupService
 {
@@ -17,6 +17,8 @@ public sealed class CleanupService
     private readonly IPenumbraBridge _penumbra;
     private readonly IHonorificBridge _honorific;
     private readonly IMoodlesBridge _moodles;
+    private readonly ICustomizePlusBridge _customizePlus;
+    private readonly ISimpleHeelsBridge _heels;
     private readonly IDecalPublisher? _decals;
     private readonly AppliedStateStore _store;
     private readonly RedrawScheduler _redraw;
@@ -32,6 +34,8 @@ public sealed class CleanupService
     /// <param name="penumbra"> Penumbra bridge. </param>
     /// <param name="honorific"> Honorific bridge. </param>
     /// <param name="moodles"> Moodles bridge. </param>
+    /// <param name="customizePlus"> Customize+ bridge. </param>
+    /// <param name="heels"> Simple Heels bridge. </param>
     /// <param name="decals"> Decal publisher; null when the decal feature could not start. </param>
     /// <param name="store"> Applied state; reset at the end. </param>
     /// <param name="redraw"> Redraw scheduler. </param>
@@ -43,6 +47,7 @@ public sealed class CleanupService
     /// <param name="clock"> UTC clock. </param>
     /// <param name="log"> Optional logger. </param>
     public CleanupService(IGlamourerBridge glamourer, IPenumbraBridge penumbra, IHonorificBridge honorific, IMoodlesBridge moodles,
+        ICustomizePlusBridge customizePlus, ISimpleHeelsBridge heels,
         IDecalPublisher? decals, AppliedStateStore store, RedrawScheduler redraw, IConditionEvaluator evaluator, Func<LaminaConfig> config,
         Func<Guid?> collectionId, Func<int?> localPlayerIndex, Func<nint> localPlayerAddress, Func<DateTime>? clock = null,
         Action<string>? log = null)
@@ -51,6 +56,8 @@ public sealed class CleanupService
         _penumbra           = penumbra;
         _honorific          = honorific;
         _moodles            = moodles;
+        _customizePlus      = customizePlus;
+        _heels              = heels;
         _decals             = decals;
         _store              = store;
         _redraw             = redraw;
@@ -65,7 +72,7 @@ public sealed class CleanupService
 
     /// <summary> Outcome of a cleanup, for logging and the UI. </summary>
     public sealed record CleanupResult(string Reason, bool ModsCleared, bool DecalsCleared, bool GlamourerReverted, bool HonorificCleared,
-        int MoodlesRemoved, int PresetsRemoved, bool RedrawSent, IReadOnlyList<string> Problems);
+        int MoodlesRemoved, int PresetsRemoved, bool RedrawSent, IReadOnlyList<string> Problems, bool CustomizePlusCleared = false, bool HeelsCleared = false);
 
     /// <summary> Full cleanup: master toggle off, logout, plugin unload. </summary>
     /// <param name="reason"> Why cleanup runs (logged). </param>
@@ -74,7 +81,7 @@ public sealed class CleanupService
         => Cleanup(reason, redrawNow, revertGlamourer: true, resetEvaluator: true);
 
     /// <summary>
-    /// Cleanup before switching to another profile: the collection gets its clean slate, Honorific and Moodles are undone,
+    /// Cleanup before switching to another profile: the collection gets its clean slate, Honorific, Moodles, Customize+ and Simple Heels are undone,
     /// but the Glamourer state stays (the next apply replaces or reverts it through the normal diff, so the character never
     /// flashes back to automation for a frame) and the condition timers keep running.
     /// </summary>
@@ -154,6 +161,25 @@ public sealed class CleanupService
             }
         }
 
+        // 4b. Customize+: delete only the temporary profile Lamina set (ProfileNotFound = already gone).
+        var customizePlusCleared = false;
+        if (_store.CustomizePlusApplied && _customizePlus.Available && index is { } cplusIndex)
+        {
+            var code = _customizePlus.DeleteTemporaryProfile(cplusIndex);
+            customizePlusCleared = code is CustomizePlusEc.Success or CustomizePlusEc.ProfileNotFound;
+            if (!customizePlusCleared)
+                problems.Add($"Customize+ DeleteTemporaryProfile: {code}");
+        }
+
+        // 4c. Simple Heels: drop only Lamina's registration so the player's own configuration applies again.
+        var heelsCleared = false;
+        if (_store.HeelsSet is not null && _heels.Available && index is { } heelsIndex)
+        {
+            heelsCleared = _heels.Unregister(heelsIndex);
+            if (!heelsCleared)
+                problems.Add("Simple Heels UnregisterPlayer failed");
+        }
+
         // 5. One redraw if the collection changed.
         var redrawSent = false;
         if (modsCleared || _store.ModsApplied || decalsCleared)
@@ -167,9 +193,10 @@ public sealed class CleanupService
             _evaluator.Reset();
 
         _log?.Invoke($"Cleanup ({reason}): mods cleared {modsCleared}, decals cleared {decalsCleared}, glamourer reverted {reverted}, honorific cleared {honorificCleared}, "
-                   + $"moodles removed {moodlesRemoved}, presets removed {presetsRemoved}, redraw sent {redrawSent}"
+                   + $"moodles removed {moodlesRemoved}, presets removed {presetsRemoved}, customize+ cleared {customizePlusCleared}, heels cleared {heelsCleared}, redraw sent {redrawSent}"
                    + (problems.Count > 0 ? $", problems: {string.Join("; ", problems)}" : string.Empty));
 
-        return new CleanupResult(reason, modsCleared, decalsCleared, reverted, honorificCleared, moodlesRemoved, presetsRemoved, redrawSent, problems);
+        return new CleanupResult(reason, modsCleared, decalsCleared, reverted, honorificCleared, moodlesRemoved, presetsRemoved, redrawSent, problems,
+            customizePlusCleared, heelsCleared);
     }
 }

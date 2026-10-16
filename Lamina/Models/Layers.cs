@@ -341,6 +341,41 @@ public sealed class MoodlesLayer : Layer
 }
 
 /// <summary>
+/// A Customize+ profile, referenced by its unique id. Its bone edits are read over IPC and applied to the player as one
+/// temporary Customize+ profile (nothing is written to the Customize+ configuration); bones of several layers merge by name.
+/// </summary>
+public sealed class CustomizePlusLayer : Layer
+{
+    public const string KindName = "CustomizePlus";
+    public override string Kind => KindName;
+
+    public Guid ProfileId { get; set; }
+
+    /// <summary> Display name at pick time, informational only (shown when the profile is missing). </summary>
+    public string? ProfileName { get; set; }
+
+    public override string Describe() => $"Customize+ profile {ProfileName ?? ProfileId.ToString()}";
+}
+
+/// <summary>
+/// A Simple Heels height offset registered for the player over IPC while the pass matches. <see cref="Relative"/> adds the
+/// offset to the player's own resolved Simple Heels offset (their per-footwear setting) instead of replacing it.
+/// </summary>
+public sealed class SimpleHeelsLayer : Layer
+{
+    public const string KindName = "SimpleHeels";
+    public override string Kind => KindName;
+
+    /// <summary> Height offset in game units (metres); positive raises the character. </summary>
+    public float Offset { get; set; }
+
+    /// <summary> Add to the player's current Simple Heels offset instead of replacing it. Default on. </summary>
+    public bool Relative { get; set; } = true;
+
+    public override string Describe() => $"Simple Heels {(Relative && Offset >= 0 ? "+" : string.Empty)}{Offset:0.###}";
+}
+
+/// <summary>
 /// State of one Penumbra mod inside the Lamina collection, keyed by mod directory. Every part is optional ("applies"
 /// checkboxes in the editor): null / absent = inherited from the running design or the collection, not set by this entry.
 /// </summary>
@@ -424,6 +459,8 @@ public static class LayerKinds
         (VitrineDesignLayer.KindName,  "Vitrine Design",     () => new VitrineDesignLayer()),
         (HonorificLayer.KindName,      "Honorific",          () => new HonorificLayer()),
         (MoodlesLayer.KindName,        "Moodles",            () => new MoodlesLayer()),
+        (CustomizePlusLayer.KindName,  "Customize+",         () => new CustomizePlusLayer()),
+        (SimpleHeelsLayer.KindName,    "Simple Heels",       () => new SimpleHeelsLayer()),
         (DecalLayer.KindName,          "Decal",              () => new DecalLayer()),
     };
 

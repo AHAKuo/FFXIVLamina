@@ -1,3 +1,4 @@
+using Lamina.Ipc;
 using Lamina.Models;
 using Penumbra.Api.Enums;
 
@@ -21,6 +22,9 @@ internal sealed class UiCaches : IDisposable
         _s.Penumbra.AvailabilityChanged  += MarkStale;
         _s.Honorific.AvailabilityChanged += MarkStale;
         _s.Moodles.AvailabilityChanged   += MarkStale;
+        _s.CustomizePlus.AvailabilityChanged += MarkStale;
+        _s.CustomizePlus.ProfilesChanged     += MarkStale;
+        _s.SimpleHeels.AvailabilityChanged   += MarkStale;
         _s.Vitrine.DesignsChanged        += MarkStale;
     }
 
@@ -30,6 +34,9 @@ internal sealed class UiCaches : IDisposable
         _s.Penumbra.AvailabilityChanged  -= MarkStale;
         _s.Honorific.AvailabilityChanged -= MarkStale;
         _s.Moodles.AvailabilityChanged   -= MarkStale;
+        _s.CustomizePlus.AvailabilityChanged -= MarkStale;
+        _s.CustomizePlus.ProfilesChanged     -= MarkStale;
+        _s.SimpleHeels.AvailabilityChanged   -= MarkStale;
         _s.Vitrine.DesignsChanged        -= MarkStale;
     }
 
@@ -49,6 +56,16 @@ internal sealed class UiCaches : IDisposable
     public IReadOnlyList<Widgets.PickItem<Guid>> MoodlePresets { get; private set; } = Array.Empty<Widgets.PickItem<Guid>>();
 
     public IReadOnlyList<Widgets.PickItem<Guid>> VitrineDesigns { get; private set; } = Array.Empty<Widgets.PickItem<Guid>>();
+
+    /// <summary> Customize+ saved profiles sorted by folder path. </summary>
+    public IReadOnlyList<Widgets.PickItem<Guid>> CustomizePlusProfiles { get; private set; } = Array.Empty<Widgets.PickItem<Guid>>();
+
+    /// <summary> Customize+ profile id → name. </summary>
+    public IReadOnlyDictionary<Guid, string> CustomizePlusProfileNames { get; private set; } = new Dictionary<Guid, string>();
+
+    /// <summary> Name of a Customize+ profile, or null when unknown (missing, or Customize+ unavailable). </summary>
+    public string? CustomizePlusProfileName(Guid id)
+        => CustomizePlusProfileNames.TryGetValue(id, out var name) ? name : null;
 
     // Catalog lists (built once; game data never changes at runtime).
     private IReadOnlyList<Widgets.PickItem<uint>>? _territories;
@@ -134,6 +151,21 @@ internal sealed class UiCaches : IDisposable
         catch (Exception ex)
         {
             _s.Log.Debug(ex, "UI: moodles refresh failed.");
+        }
+
+        try
+        {
+            // Customize+ sends no event for profiles created or edited without a character assigned, so re-read the list on
+            // every refresh (stale or 60 s) while the window is open.
+            _s.CustomizePlusCache.InvalidateProfiles();
+            var profiles = _s.CustomizePlus.Available ? _s.CustomizePlusCache.Profiles : Array.Empty<CustomizePlusProfileInfo>();
+            CustomizePlusProfiles = profiles.Select(p => new Widgets.PickItem<Guid>(p.Id, p.Name, Folder(p.Path)))
+                .OrderBy(p => p.Sub, StringComparer.OrdinalIgnoreCase).ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            CustomizePlusProfileNames = profiles.GroupBy(p => p.Id).ToDictionary(g => g.Key, g => g.First().Name);
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Debug(ex, "UI: Customize+ profile refresh failed.");
         }
 
         try
