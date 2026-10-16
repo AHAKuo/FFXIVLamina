@@ -123,4 +123,26 @@ public sealed class FakeGlamourerBridge : FakeBridgeBase, IGlamourerBridge, IGla
         Applied.Remove(objectIndex);
         return RevertToGameResult;
     }
+
+    /// <summary> Designs created through <see cref="AddDesign(JObject, string)"/>: id → (name, the design JObject as sent). </summary>
+    public Dictionary<Guid, (string Name, JObject Design)> AddedDesigns { get; } = new();
+
+    /// <summary> Result code returned by <see cref="AddDesign(JObject, string)"/>. </summary>
+    public GlamourerApiEc AddDesignResult { get; set; } = GlamourerApiEc.Success;
+
+    public (GlamourerApiEc Code, Guid Id) AddDesign(JObject design, string name)
+    {
+        Record(nameof(AddDesign), design, name);
+        if (!Available)
+            return (GlamourerApiEc.UnknownError, Guid.Empty);
+        if (AddDesignResult != GlamourerApiEc.Success)
+            return (AddDesignResult, Guid.Empty);
+
+        var id   = Guid.NewGuid();
+        var copy = (JObject)design.DeepClone();
+        AddedDesigns[id]  = (name, copy);
+        Designs[id]       = (name, name, 0u);
+        DesignObjects[id] = copy;
+        return (GlamourerApiEc.Success, id);
+    }
 }

@@ -86,6 +86,22 @@ public sealed class FakeGlamourerBridge : IGlamourerBridge
     public void RaiseAvailability() => AvailabilityChanged?.Invoke();
     public void RaiseFinalized(nint a, StateFinalizationType t) => StateFinalized?.Invoke(a, t);
     public GlamourerApiEc UnlockAndRevertToGame(int objectIndex) => GlamourerApiEc.Success;
+
+
+    /// <summary> Designs created through <see cref="AddDesign"/>: id → (name, the design JObject as sent). </summary>
+    public Dictionary<Guid, (string Name, JObject Design)> AddedDesigns { get; } = new();
+
+    public (GlamourerApiEc Code, Guid Id) AddDesign(JObject design, string name)
+    {
+        if (!Available)
+            return (GlamourerApiEc.UnknownError, Guid.Empty);
+        var id   = Guid.NewGuid();
+        var copy = (JObject)design.DeepClone();
+        AddedDesigns[id] = (name, copy);
+        Designs[id]      = copy;
+        Names[id]        = name;
+        return (GlamourerApiEc.Success, id);
+    }
 }
 
 /// <summary> Builders for compact test setups. </summary>

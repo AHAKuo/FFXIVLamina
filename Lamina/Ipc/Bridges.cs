@@ -61,6 +61,13 @@ public interface IGlamourerBridge : IPluginBridge
 
     /// <summary> Unlocks Lamina's lock (if any) and reverts to the plain game state: what the game itself has equipped / customized. </summary>
     GlamourerApiEc UnlockAndRevertToGame(int objectIndex);
+
+    /// <summary>
+    /// Creates a design inside Glamourer from a design JObject (FileVersion 3 layout, see <c>GlamourerDesignWriter</c>) and
+    /// writes it to disk. Returns the result code (CouldNotParse when Glamourer rejects the JSON) and the new design's id
+    /// (Guid.Empty on failure).
+    /// </summary>
+    (GlamourerApiEc Code, Guid Id) AddDesign(JObject design, string name);
 }
 
 public interface IPenumbraBridge : IPluginBridge

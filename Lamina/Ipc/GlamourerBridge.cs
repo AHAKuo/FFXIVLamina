@@ -177,4 +177,18 @@ public sealed class GlamourerBridge : BridgeBase, IGlamourerBridge, IGlamourerUn
         _disposedEvent.Dispose();
         StateFinalized = null;
     }
+
+    private AddDesign? _addDesign;
+
+    /// <inheritdoc/>
+    public (GlamourerApiEc Code, Guid Id) AddDesign(JObject design, string name)
+    {
+        var json = design.ToString(Newtonsoft.Json.Formatting.None);
+        return Call(() =>
+        {
+            _addDesign ??= new AddDesign(PluginInterface);
+            var code = _addDesign.Invoke(json, name, out var id);
+            return (code, id);
+        }, (GlamourerApiEc.UnknownError, Guid.Empty), nameof(AddDesign));
+    }
 }

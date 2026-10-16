@@ -3,6 +3,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
 using Lamina.Models;
+using Lamina.Runtime;
 using Lamina.Runtime.Compose;
 
 namespace Lamina.UI;
@@ -19,9 +20,13 @@ public sealed partial class LaminaWindow
     private PreviewResult? _livePreview;
     private DateTime _livePreviewAt = DateTime.MinValue;
     private Guid? _livePreviewProfile;
+    private (Guid? GroupId, Guid? PassId) _livePreviewFocus;
 
     private string _renameBuffer = string.Empty;
     private Guid? _renamingId;
+
+    private string _saveDesignName = string.Empty;
+    private bool _saveDesignIncludeMods = true;
 
     private void DrawPassesTab()
     {
@@ -99,6 +104,7 @@ public sealed partial class LaminaWindow
             return;
         _livePreviewAt      = now;
         _livePreviewProfile = profile.Id;
+        _livePreviewFocus   = (_groupId, _passId);
         _livePreview        = SafePreview(profile, _groupId, _passId);
     }
 
@@ -524,9 +530,121 @@ public sealed partial class LaminaWindow
             SetStatus($"{(pass is null ? "Group" : "Pass")} copied to the clipboard.", Widgets.Good);
         }
         Widgets.Tooltip("Copies a shareable string to the clipboard. Import it in the Profiles tab.");
+        ImGui.SameLine();
+        DrawSaveDesignButton(profile, group, pass, noun);
 
         DrawTransferPopup($"##copy{noun}", profile, group, pass, move: false);
         DrawTransferPopup($"##move{noun}", profile, group, pass, move: true);
+    }
+
+    // ---- save as Glamourer design ----------------------------------------------------------------
+
+    /// <summary> What the pass / group produces right now: the live preview's focus when it already focuses it, else a fresh preview. </summary>
+    private VirtualDesign? FocusDesign(Profile profile, PassGroup group, Pass? pass)
+    {
+        if (_livePreview is { Focus: { } focus } && _livePreviewProfile == profile.Id && _livePreviewFocus == (group.Id, pass?.Id))
+            return focus;
+        return SafePreview(profile, group.Id, pass?.Id)?.Focus;
+    }
+
+    private void DrawSaveDesignButton(Profile profile, PassGroup group, Pass? pass, string noun)
+    {
+        var popupId = $"##saveDesign{noun}";
+        var focus   = FocusDesign(profile, group, pass);
+        var reason  = !_s.Glamourer.Available ? "Glamourer is not available."
+            : focus is null || focus.IsEmpty ? $"This {noun} produces nothing right now."
+            : !focus.HasGlamourerContent && !focus.HasMods ? $"This {noun} produces nothing a Glamourer design can hold (only Honorific, Moodles or decals)."
+            : null;
+
+        using (ImRaii.Disabled(reason is not null))
+        {
+            if (ImGui.Button($"Save as Glamourer design…##{noun}"))
+            {
+                _saveDesignName        = pass is null ? $"{profile.Name} · {group.Name}" : $"{profile.Name} · {group.Name} · {pass.Name}";
+                _saveDesignIncludeMods = true;
+                ImGui.OpenPopup(popupId);
+            }
+        }
+        Widgets.Tooltip(reason ?? $"Creates a design inside Glamourer from what this {noun} produces right now, so it can be used outside Lamina.");
+
+        DrawSaveDesignPopup(popupId, profile, group, pass, noun);
+    }
+
+    private void DrawSaveDesignPopup(string popupId, Profile profile, PassGroup group, Pass? pass, string noun)
+    {
+        using var popup = ImRaii.Popup(popupId);
+        if (!popup)
+            return;
+
+        var focus = FocusDesign(profile, group, pass);
+        if (focus is null || focus.IsEmpty)
+        {
+            Widgets.Hint($"This {noun} produces nothing right now.");
+            if (ImGui.Button("Close"))
+                ImGui.CloseCurrentPopup();
+            return;
+        }
+
+        ImGui.TextUnformatted(pass is null ? "Save this group as a Glamourer design" : "Save this pass as a Glamourer design");
+        ImGui.Separator();
+
+        ImGui.SetNextItemWidth(360 * Widgets.Scale);
+        var submit = ImGui.InputText("Name##saveDesign", ref _saveDesignName, 128, ImGuiInputTextFlags.EnterReturnsTrue);
+
+        var inheritMods = focus.Mods.Values.Count(m => m.State is null);
+        using (ImRaii.Disabled(!focus.HasMods))
+            ImGui.Checkbox("Include mod associations", ref _saveDesignIncludeMods);
+        Widgets.Tooltip(focus.HasMods
+            ? $"{focus.Mods.Count} mod(s) are set by this {noun}."
+            + (inheritMods > 0 ? $"\n{inheritMods} of them leave enabled / disabled inherited; a Glamourer design cannot express that, so they are left out." : string.Empty)
+            : $"This {noun} sets no mods.");
+
+        Widgets.Paragraph($"Saves what this {noun} produces right now: equipment, customization, advanced settings and mod associations. "
+                        + "Honorific, Moodles and decals are not part of a Glamourer design.");
+
+        var canSave = !string.IsNullOrWhiteSpace(_saveDesignName);
+        using (ImRaii.Disabled(!canSave))
+        {
+            if (ImGui.Button("Save##saveDesign", new Vector2(120 * Widgets.Scale, 0)) || (submit && canSave))
+            {
+                SaveAsGlamourerDesign(profile, group, pass, focus);
+                ImGui.CloseCurrentPopup();
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel##saveDesign", new Vector2(120 * Widgets.Scale, 0)))
+            ImGui.CloseCurrentPopup();
+    }
+
+    private void SaveAsGlamourerDesign(Profile profile, PassGroup group, Pass? pass, VirtualDesign focus)
+    {
+        var name        = _saveDesignName.Trim();
+        var origin      = pass is null ? $"{profile.Name} / {group.Name}" : $"{profile.Name} / {group.Name} / {pass.Name}";
+        var includeMods = _saveDesignIncludeMods && focus.HasMods;
+        try
+        {
+            var written = GlamourerDesignWriter.BuildWithReport(focus, name, $"Saved from Lamina ({origin}).", includeMods, _caches.ModSettings);
+            var (code, id) = _s.Glamourer.AddDesign(written.Design, name);
+            if (code != Glamourer.Api.Enums.GlamourerApiEc.Success || id == Guid.Empty)
+            {
+                SetStatus($"Glamourer did not accept the design: {code}.", Widgets.Bad);
+                return;
+            }
+
+            // The new design must be pickable right away: re-read Glamourer's list and rebuild the UI lists.
+            _s.DesignCache.RefreshNames();
+            _caches.MarkStale();
+
+            var note = written.SkippedMods.Count > 0
+                ? $" {written.SkippedMods.Count} mod(s) left out (enabled state inherited): {string.Join(", ", written.SkippedMods)}."
+                : string.Empty;
+            SetStatus($"Saved Glamourer design '{name}'.{note}", Widgets.Good, 10f);
+        }
+        catch (Exception ex)
+        {
+            _s.Log.Error(ex, "UI: saving a Glamourer design failed.");
+            SetStatus($"Saving the Glamourer design failed: {ex.Message}", Widgets.Bad);
+        }
     }
 
     private void DrawTransferPopup(string id, Profile profile, PassGroup group, Pass? pass, bool move)
