@@ -13,7 +13,7 @@ This is the most important thing to know. Lamina never touches your main collect
 
 ![Penumbra collection status in the Settings tab](images/readme/00-penumbra-collection.png)
 
-The Settings tab shows the collection's status. Green means the collection exists and your character is assigned to it. If it is missing or not assigned, the same line tells you what to do. Lamina never assigns or unassigns the collection itself; to opt out of mod changes, unassign it in Penumbra and Lamina clears what it wrote within a second. Glamourer, Honorific, Moodles, Customize+ and Simple Heels still apply without the collection; only mods need it.
+In the Settings tab: (1) the collection name Lamina looks for, (2) Refresh after you create or assign it in Penumbra, (3) the status line. Green means the collection exists and your character is assigned to it. If it is missing or not assigned, the same line tells you what to do. Lamina never assigns or unassigns the collection itself; to opt out of mod changes, unassign it in Penumbra and Lamina clears what it wrote within a second. Glamourer, Honorific, Moodles, Customize+ and Simple Heels still apply without the collection; only mods need it.
 
 ### One switch, a whole character
 Lamina off is your plain Glamourer and Penumbra state. Lamina on is whatever the active profile resolves to: outfit, hair, hair colour, body mods, titles, tattoos. Flipping the switch is one redraw either way.
@@ -29,27 +29,39 @@ A profile is a complete Lamina setup. Keep one per character (or per mood) and t
 
 ![The Profiles tab](images/readme/01-profiles.png)
 
+(1) Create a profile or import one from the clipboard. (2) The On column: tick a profile to make it the active one, the dot marks which one is live. (3) Per-profile actions: edit, rename, duplicate, export to clipboard, delete.
+
 ### Pass groups and passes
 Inside a profile, looks are organized into **pass groups** and **passes**. Groups are checked top to bottom and the first group whose conditions match wins. Inside a group every matching pass contributes its layers, and lower passes override higher ones. A group marked **Final Pass** stops evaluation after it.
 
 ![The Passes tab: groups, passes, and the selected pass](images/readme/03-passes-overview.png)
 
+(1) The profile you are editing, with a live indicator. (2) Pass groups, checked top to bottom; the first group whose conditions match wins. (3) The passes in the selected group; lower rows override higher ones, and a green tick marks a pass that matches right now. (4) The selected pass's conditions. (5) Its layers.
+
 A group can carry its own conditions, so a whole set of passes only exists while, say, you are in a housing district or on a healer job.
 
 ![Pass group with group conditions](images/readme/04-pass-group.png)
+
+(1) The group is active now. (2) Final Pass: stop evaluating groups after this one. (3) Group conditions, which gate every pass inside the group.
 
 ### Conditions
 Each pass (and each group) has a condition tree. Conditions combine with **All of** or **Any of**, can be negated with **Not**, and nest into sub-groups for anything more involved.
 
 ![All of / Any of](images/readme/05-group-all-any.png)
 
+(1) All of / Any of. (2) Not inverts the whole block. (3) Add a condition. (4) Add a nested sub-group with its own All of / Any of.
+
 Condition types cover time, calendar, weather, biome, location, duty, housing, social state, character, job, online status, status effects, movement, body state, emote or pose, and activity.
 
 ![Condition types](images/readme/06-condition-types.png)
 
+(1) Add Condition opens (2) the list of condition types.
+
 Each type has its own editor. The Job condition, for example, matches on jobs, roles, disciplines or gearsets, a level range and whether the weapon is drawn, with hold and linger timers so a quick weapon flick does not flicker your outfit.
 
 ![The Job condition](images/readme/07-condition-job.png)
+
+(1) Match on jobs, roles, disciplines or gearsets. (2) Level range. (3) Weapon drawn or sheathed. (4) Not inverts the condition; Hold and Linger delay the switch on and off.
 
 ### Layers
 A pass is a stack of layers, and lower layers override the ones above them. Layer types: Glamourer design, Equipment Changes, Equipment Cleanse, Appearance Changes, Penumbra Adjust, Vitrine Design, Honorific, Moodles, Customize+, Simple Heels and Decal.
@@ -58,13 +70,19 @@ A pass is a stack of layers, and lower layers override the ones above them. Laye
 
 ![Penumbra Adjust layer](images/readme/08-layer-penumbra-adjust.png)
 
+(1) The "applies" checkboxes next to State and Priority: only ticked parts are written, the rest is inherited. (2) Each mod's option groups, with the same per-group checkboxes. (3) Add a mod, or re-read the Lamina collection to pick up what Penumbra has.
+
 **Appearance Changes** edits the Glamourer customization fields directly, no saved design needed. Only ticked fields apply; everything else passes through from the layers above. Here a Vitrine hair design is stacked with a hair colour and highlights colour change.
 
 ![Vitrine hair design plus Appearance Changes](images/readme/09-layer-vitrine-hair-appearance.png)
 
+(1) The Vitrine layer's switches: override the mod's settings, clear other slots, and apply the design's hair / face / tail value. (2) The two Appearance Changes fields that are ticked and therefore applied; the unticked rows show the current value and pass through.
+
 **Equipment Changes** does the same for gear: an item per slot, dyes, crest, and hat / visor / weapon / Viera ears visibility. Here it recolours the body and feet of the outfit layered above it.
 
 ![Equipment Changes layer](images/readme/12-layer-equipment-changes.png)
+
+(1) Item per slot; "(keep)" leaves the item from the layers above. (2) The dye "applies" checkboxes: ticked, so these dyes are written over the outfit. (3) Hat, visor, weapon and Viera ears visibility.
 
 ### Outfits from Vitrine
 With the separate [Vitrine](https://github.com/AHAKuo/FFXIVVitrine) plugin installed, any mod in your Penumbra collection becomes a design you can drop into a pass. Vitrine shows the mod's own preview photo and the items it affects.
@@ -74,6 +92,8 @@ With the separate [Vitrine](https://github.com/AHAKuo/FFXIVVitrine) plugin insta
 The **Vitrine Design** layer carries the mod's settings and the pieces the design equips. **Override slots** lets one pass take the body from one design and the boots from another, and **Clear other slots** empties every slot the design does not fill so an earlier outfit does not bleed through.
 
 ![Vitrine Design layer](images/readme/11-layer-vitrine-outfit.png)
+
+(1) Override the mod's option settings for this pass. (2) Clear other slots: design default, forced on, or forced off. (3) Override slots to take only some of the pieces. (4) The pieces this design equips.
 
 ### Tattoos, freckles and beauty marks (Decal layer)
 The **Decal** layer puts a PNG or JPG on your character's skin. It is experimental: it needs a click on true skin, mirrored-UV bodies show it on both sides, and some body mods replace the skin texture in ways the bake cannot follow.
@@ -99,6 +119,8 @@ The decal is part of the skin, so it holds up from any angle and in any light.
 Decals stack. This pass carries three: a beauty mark on the chest, a tattoo on the arm and freckles on the face.
 
 ![Three decal layers in one pass](images/readme/19-decal-stack.png)
+
+(1) Lower layers override. (2) Three Decal layers stacked in one pass, each with its own spot and size.
 
 <img src="images/readme/20-decal-face.png" width="500" alt="Freckles from a face decal and a beauty mark on the chest">
 
