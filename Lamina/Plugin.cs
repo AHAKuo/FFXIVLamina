@@ -179,6 +179,9 @@ public sealed class Plugin : IDalamudPlugin
         _window.RegisterWith(_windowSystem);
         Track(new Commands(Services, () => _window.Toggle()));
 
+        // Dalamud hides plugin windows in group pose and cutscenes by default; layering looks while posing is the point.
+        PluginInterface.UiBuilder.DisableGposeUiHide    = true;
+        PluginInterface.UiBuilder.DisableCutsceneUiHide = true;
         PluginInterface.UiBuilder.Draw         += DrawUi;
         PluginInterface.UiBuilder.OpenMainUi   += OpenMainUi;
         PluginInterface.UiBuilder.OpenConfigUi += OpenMainUi;
