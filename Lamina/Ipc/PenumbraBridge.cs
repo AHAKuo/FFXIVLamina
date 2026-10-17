@@ -25,6 +25,7 @@ public sealed class PenumbraBridge : BridgeBase, IPenumbraBridge
     private readonly GetCollectionForObject        _getCollectionForObject;
     private readonly SetTemporaryModSettings       _setTemporaryModSettings;
     private readonly RemoveAllTemporaryModSettings _removeAllTemporaryModSettings;
+    private readonly RemoveTemporaryModSettings    _removeTemporaryModSettings;
     private readonly RedrawObject                  _redrawObject;
     private readonly GetModList                    _getModList;
     private readonly GetAvailableModSettings       _getAvailableModSettings;
@@ -56,6 +57,7 @@ public sealed class PenumbraBridge : BridgeBase, IPenumbraBridge
         _getCollectionForObject        = new GetCollectionForObject(pi);
         _setTemporaryModSettings       = new SetTemporaryModSettings(pi);
         _removeAllTemporaryModSettings = new RemoveAllTemporaryModSettings(pi);
+        _removeTemporaryModSettings    = new RemoveTemporaryModSettings(pi);
         _redrawObject                  = new RedrawObject(pi);
         _getModList                    = new GetModList(pi);
         _getAvailableModSettings       = new GetAvailableModSettings(pi);
@@ -141,6 +143,11 @@ public sealed class PenumbraBridge : BridgeBase, IPenumbraBridge
     public PenumbraApiEc RemoveAllTemporaryModSettings(Guid collectionId)
         => Call(() => _removeAllTemporaryModSettings.Invoke(collectionId, IpcConstants.PenumbraKey), PenumbraApiEc.UnknownError,
             nameof(RemoveAllTemporaryModSettings));
+
+    /// <inheritdoc/>
+    public PenumbraApiEc RemoveTemporaryModSettings(Guid collectionId, string modDirectory)
+        => Call(() => _removeTemporaryModSettings.Invoke(collectionId, modDirectory, IpcConstants.PenumbraKey), PenumbraApiEc.UnknownError,
+            nameof(RemoveTemporaryModSettings));
 
     /// <inheritdoc/>
     public void RedrawObject(int objectIndex)

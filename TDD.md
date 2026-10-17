@@ -340,7 +340,10 @@ class Profile                             // → profiles/<Id>.json
 
 class Target
 {
-    TargetKind Kind;                      // LocalPlayer | Character | (later) OtherPlayer
+    TargetKind Kind;                      // LocalPlayer | OtherPlayer (player: Name + WorldId) | Character (humanoid NPC: Name + DataId)
+    string? Name; uint? WorldId; uint? DataId;
+    string? CollectionName;               // Penumbra collection for a non-local target's mods; null = Lamina's own (Settings) collection
+}| Character | (later) OtherPlayer
     string? Name; uint? WorldId;          // when Kind = Character
 }
 
@@ -450,7 +453,7 @@ Race, Clan, Body type, Model (non human models), Height, Face, Hairstyle, Highli
 Hat visible · Visor toggled · Weapon visible · Viera ears visible · Wetness.
 
 ### Mods (Penumbra)
-- Target: the **Lamina** collection only. Cleared before every apply; untouched mods stay at default.
+- Target: the **Lamina** collection (Settings), or the collection named on a non-local target. Several targets may share one collection, so an apply only removes the mods that target wrote before and no longer sets (`AppliedStateStore.ModDirectories`); untouched mods stay at default. One `RemoveAllTemporaryModSettings` sweep per collection at first use clears leftovers of an earlier instance.
 - Per mod: mod directory, enabled / disabled, priority, option settings (group → selected options).
 - **Sources:** Vitrine designs, Glamourer design mod associations (carried over as is), Penumbra Adjust layers.
 
@@ -551,9 +554,10 @@ Checked against `Penumbra.Api/` and `Glamourer.Api/` in this repo on 2026-10-14.
 | Need | API | Notes |
 |---|---|---|
 | Find the Lamina collection | `GetCollections()` / `GetCollectionsByIdentifier(name)` | No API to create a permanent collection was found, so first run asks the user to create (or pick) the "Lamina" collection in Penumbra. |
-| Detect assignment / opt out | `GetCollectionForObject(objectIndex)` | If the effective collection is not Lamina, skip mods for that target. Lamina never calls `SetCollectionForObject`. |
+| Detect assignment / opt out | `GetCollectionForObject(objectIndex)` | Local player: if the effective collection is not Lamina's, skip mods (opt out). Other targets: mods are written regardless; the status only says whether they show on the character. Lamina never calls `SetCollectionForObject`. |
 | Write mod state | `SetTemporaryModSettings(collectionId, modDirectory, modName, inherit, enabled, priority, options, source, key)` | `source` = "Lamina". `options` = group name → enabled options. |
-| **Clean slate in one call** | `RemoveAllTemporaryModSettings(collectionId, key)` | ✅ Verified. Use a **negative key**: an identification lock that lets the user still edit, but lets Lamina remove only its own settings. |
+| Remove one mod's setting | `RemoveTemporaryModSettings(collectionId, modDirectory, key)` | Per-target removal, so targets sharing a collection never take each other's mods. |
+| Sweep at first use | `RemoveAllTemporaryModSettings(collectionId, key)` | ✅ Verified. Once per collection and plugin lifetime, before any target writes there. Use a **negative key**: an identification lock that lets the user still edit, but lets Lamina remove only its own settings. |
 | Redraw | `RedrawObject(objectIndex, RedrawType)` | One per apply, scheduled. `GameObjectRedrawn` event available. |
 | Mod catalog (Vitrine) | `GetModList()`, `GetChangedItems(modDirectory, modName)`, `ModAdded` / `ModDeleted` / `ModMoved` events | Affected items per mod for Vitrine classification. |
 
@@ -654,7 +658,7 @@ All FFXIV states Lamina can react to. First build subset is in section 14.
 - Honorific and Moodles layers.
 - Biome, Calendar, Social, Status effects, full Emote and Activity sets.
 - Debug overlay, import / export.
-- Other targets (characters / players).
+- Other targets (characters / players): done 2026-10-17, see TargetSession / TargetResolver / TargetCapabilities. Conditions still read the local player.
 
 ### Build order
 1. **Spike plugin** (throwaway): find the Lamina collection, write temp settings with a negative key, `RemoveAllTemporaryModSettings`, one redraw. Apply a merged Glamourer state with `Lock`, then change zone / job / gearset and watch whether automation breaks through (`StateFinalized`).

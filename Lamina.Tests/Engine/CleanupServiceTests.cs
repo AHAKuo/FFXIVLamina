@@ -64,7 +64,7 @@ public class CleanupServiceTests
     }
 
     [Fact]
-    public void NothingApplied_TouchesNothingButPenumbraClear()
+    public void NothingApplied_TouchesNothing()
     {
         var rig = new EngineRig();
 
@@ -73,7 +73,9 @@ public class CleanupServiceTests
         Assert.Empty(rig.Glamourer.Calls);
         Assert.Empty(rig.Honorific.Calls);
         Assert.Empty(rig.Moodles.Calls);
-        Assert.Single(rig.Penumbra.CallsNamed("RemoveAllTemporaryModSettings"));
+        // Nothing recorded, nothing removed: other targets may share the collection, so there is no blanket clear.
+        Assert.Empty(rig.Penumbra.CallsNamed("RemoveAllTemporaryModSettings"));
+        Assert.Empty(rig.Penumbra.CallsNamed("RemoveTemporaryModSettings"));
         Assert.False(result.ModsCleared);
         Assert.False(result.RedrawSent);
     }

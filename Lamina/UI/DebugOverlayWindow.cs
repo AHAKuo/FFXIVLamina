@@ -80,6 +80,18 @@ public sealed class DebugOverlayWindow : Window
         if (engine.RedrawPending)
             ImGui.TextColored(Widgets.Warn, "Redraw pending (waiting for a safe moment)");
 
+        foreach (var t in engine.Targets.Where(t => !t.Target.IsLocal))
+        {
+            ImGui.Separator();
+            var who = t.Target.Kind == TargetKind.OtherPlayer ? $"{t.Target.Name}@{_s.Catalog.WorldName(t.Target.WorldId ?? 0)}" : $"{t.Target.Name} (NPC)";
+            ImGui.TextUnformatted($"Target {who}: {(t.ProfileName ?? "(no profile)")} · {(t.Retiring ? "removing" : t.Shadowed ? "shadowed" : t.Present ? $"rendered #{t.ObjectIndex}" : "not rendered")} · collection {Widgets.Humanize(t.Collection.ToString())}");
+            foreach (var d in t.Dropped)
+                Widgets.Hint("• " + d);
+            if (t.LastApply is { } ta)
+                foreach (var p in ta.Problems)
+                    ImGui.TextColored(Widgets.Warn, "• " + p);
+        }
+
         ImGui.Separator();
         Widgets.Hint($"#{s.Sequence} · {_s.Catalog.TerritoryName(s.TerritoryId)} · {_s.Catalog.WeatherName(s.WeatherId)} · ET {s.EorzeaTime:hh\\:mm}");
         Widgets.Hint($"{_s.Catalog.JobAbbreviation(s.ClassJobId)} {s.Level} · gearset {(s.GearsetId < 0 ? "?" : (s.GearsetId + 1).ToString())} · {_s.Catalog.OnlineStatusName(s.OnlineStatusId)} · HP {s.HpPercent}%");

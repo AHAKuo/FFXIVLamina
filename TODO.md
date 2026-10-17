@@ -318,15 +318,26 @@ default and only shown when the user turns them on.
       `/heels temp set height X ... silent` through `ICommandManager.ProcessCommand` (the temp offset is in the local report;
       re-issue after emote changes, zero every field to clear). Per-layer or per-plugin toggle "visible to sync plugins".
 - [ ] Moodles presets: expand to statuses so cleanup can remove them (needs preset-info IPC in the bridge).
-- [ ] Other targets (characters / players). Wanted 2026-10-16: a Lamina profile can target someone other than the local
-      player (name + home world); its passes apply while that character is rendered near you (object table lookup by name /
-      world, re-resolve on spawn / despawn, zone change, redraw). Rules: one Lamina profile active per target (the local
-      player stays a target like any other), and a target only receives what is valid for that actor: Customize+ temp profile
-      (`SetTemporaryProfileOnCharacter` takes any object index), Glamourer state (`ApplyState` by object index), Penumbra
-      temporary mods / collection assignment for that actor, Simple Heels `RegisterPlayer(objectIndex)`, decals; Honorific
-      and Moodles are local-player only (skip with a reason). Needs: a target picker on the profile (local / name + world),
-      per-target `AppliedStateStore` and cleanup when the target leaves the screen or the profile switches, conditions
-      evaluated against the target (or against the local player, decide per condition), `/lam why` per target. Today every
-      layer that is not actor-bound (Penumbra Adjust, Vitrine design mods in a shared collection) already leaks to whoever
-      uses that collection; the targeting work must make that explicit in the UI.
+- [x] Other targets (characters / players). Done 2026-10-17 (unreleased): a profile's target list can hold your own
+      character, other players (name + home world) and humanoid NPCs (name + data id), picked from the characters rendered
+      near you (Profiles tab, crosshair button; only players and NPCs with a human model are offered, never minions, mounts,
+      monsters or objects). One `TargetSession` per target (own `AppliedStateStore`, applier, cleanup, redraw scheduler);
+      `TargetResolver` finds the actor by identity every call (object table indices are reused), rescans on a miss at most
+      every 250 ms. `TargetCapabilities` trims the composed design to what the actor can take before diffing and reports the
+      dropped sections (UI, `/lam why`, `/lam targets`): other players get everything but decals (bake is on your own meshes;
+      relative heels become absolute), NPCs get Glamourer, Customize+ and mods. Mods for a non-local target go into Lamina's
+      own collection by default (or a collection named on the target) and are written even while the character is not
+      assigned to it (`CollectionStatus.NotAssigned` is informational there; the player assigns in Penumbra). Targets share
+      collections safely: `AppliedStateStore.ModDirectories` records what each target wrote and `TemporaryModSettings.RemoveWritten`
+      removes only those (no more `RemoveAllTemporaryModSettings` clean slate; one sweep per collection at first use catches
+      leftovers of an earlier instance). Same mod set by two profiles in one collection: last applied wins. The layer editor
+      greys out (and refuses to add) layer kinds none of the profile's targets can take. When a target is not rendered and its
+      profile is off (or the target was removed), `CleanupService.CleanupAbsent` reverts Glamourer by player name and the
+      Customize+ temporary profile by id; Honorific / Moodles / Simple Heels wait for the actor to come back. A named player
+      target that is you yields to an active Local Player profile ("shadowed"). Conditions are evaluated against the local
+      player's snapshot for every target.
+      - [ ] Conditions evaluated against the target's own state (job, movement, emote of the other character) — needs a
+            per-actor snapshot reader; today `/lam why` says so.
+      - [ ] Decals on other characters: `ISkinMeshProvider` reads the local player's draw object only.
+      - [ ] Honorific / Moodles / Simple Heels on an absent target can only be undone when it is rendered again (no identity-based IPC).
 - [ ] Location picker for `PlaceNameIds` (field exists, no UI picker yet).

@@ -88,7 +88,7 @@ public sealed partial class LaminaWindow
         {
             ImGui.SameLine();
             if (profile.Enabled)
-                Widgets.Badge("● active", Widgets.Good, "This profile is applied to the local player.");
+                Widgets.Badge("● active", Widgets.Good, "This profile is applied to its targets.");
             else
                 Widgets.Badge("○ inactive", Widgets.Muted, "Enable it in the Profiles tab to apply it.");
         }

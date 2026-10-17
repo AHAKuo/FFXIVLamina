@@ -35,6 +35,20 @@ public sealed class AppliedStateStore
     public int ModsWritten { get; set; }
 
     /// <summary>
+    /// Mod directories whose temporary settings this store's owner wrote into the collection. Several targets may share one
+    /// collection, so an apply or cleanup only ever removes these, never everything in the collection.
+    /// </summary>
+    public HashSet<string> ModDirectories { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary> Forgets the mod section (hash, count and the written directories). </summary>
+    public void ForgetMods()
+    {
+        ModsHash    = null;
+        ModsWritten = 0;
+        ModDirectories.Clear();
+    }
+
+    /// <summary>
     /// Hash of the decal list Lamina last handed to the publisher. Null when nothing is published (no decal temporary mod in
     /// the collection); the engine clears it again when a publish fails so the next evaluation retries.
     /// </summary>
@@ -112,8 +126,7 @@ public sealed class AppliedStateStore
         DesignHash    = null;
         LastDesign    = null;
         GlamourerHash = keepGlamourer ? glamourer : null;
-        ModsHash      = null;
-        ModsWritten   = 0;
+        ForgetMods();
         ForgetDecals();
         HonorificSet  = null;
         CustomizePlusHash        = null;

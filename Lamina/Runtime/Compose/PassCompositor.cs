@@ -32,12 +32,17 @@ public sealed class PassCompositor
     /// <summary> Which random layer each pass uses right now. <see cref="Compose"/> rolls and commits; <see cref="Preview"/> only reads. </summary>
     public RandomLayerPicks RandomPicks { get; }
 
-    /// <summary> Composes the final design for one profile. Rolls the random sections of newly contributing passes and forgets those of passes that stopped. </summary>
+    /// <summary>
+    /// Composes the final design for one profile. Rolls the random sections of newly contributing passes and, with
+    /// <paramref name="retainRandom"/>, forgets those of passes that stopped. An engine that composes several profiles per tick
+    /// (one per target) passes false and calls <see cref="RandomLayerPicks.Retain"/> once with the union of matched passes.
+    /// </summary>
     public (VirtualDesign Design, EvaluationReport Report) Compose(Profile profile, GameStateSnapshot snapshot,
-        IConditionEvaluator evaluator, EvaluationDirection direction, LayerResolver resolver)
+        IConditionEvaluator evaluator, EvaluationDirection direction, LayerResolver resolver, bool retainRandom = true)
     {
         var result = ComposeCore(profile, snapshot, direction, resolver, stack => evaluator.Evaluate(stack, snapshot), commitRandom: true);
-        RandomPicks.Retain(result.Item2.MatchedPassIds);
+        if (retainRandom)
+            RandomPicks.Retain(result.Item2.MatchedPassIds);
         return result;
     }
 

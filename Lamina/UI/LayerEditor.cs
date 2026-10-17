@@ -9,6 +9,7 @@ using Lamina.Models;
 using Lamina.Persistence;
 using Lamina.Runtime;
 using Lamina.Runtime.Compose;
+using Lamina.Runtime.Engine;
 using Lamina.Runtime.State;
 using Penumbra.Api.Enums;
 
@@ -136,7 +137,7 @@ internal sealed class LayerEditor
             if (popup)
                 foreach (var (kind, display, create) in LayerKinds.All)
                 {
-                    var (available, why) = Availability(kind);
+                    var (available, why) = Availability(profile, kind);
                     using var dis = ImRaii.Disabled(!available);
                     if (ImGui.Selectable(display) && available)
                     {
@@ -179,7 +180,8 @@ internal sealed class LayerEditor
             var summary   = Summary(layer);
             var textStart = ImGui.GetCursorScreenPos();
             var textMaxX  = MathF.Max(textStart.X + 1f, textStart.X + ImGui.GetContentRegionAvail().X - buttonsWidth - ImGui.GetStyle().ItemSpacing.X);
-            var (avail, reason) = Availability(layer.Kind);
+            var (avail, reason) = Availability(profile, layer.Kind);
+            var forTargets      = TargetSupport(profile, layer.Kind) is null;
             ImGui.PushClipRect(textStart, new Vector2(textMaxX, textStart.Y + ImGui.GetFrameHeight()), true);
             using (ImRaii.Group())
             {
@@ -192,7 +194,7 @@ internal sealed class LayerEditor
                 if (!avail)
                 {
                     ImGui.SameLine();
-                    Widgets.Badge("(plugin missing)", Widgets.Warn);
+                    Widgets.Badge(forTargets ? "(plugin missing)" : "(not for these targets)", Widgets.Warn);
                 }
                 if (picked == layer.Id)
                 {
@@ -225,6 +227,9 @@ internal sealed class LayerEditor
             if (layer.Collapsed)
                 continue;
             using var indent = ImRaii.PushIndent(22f * Widgets.Scale);
+            if (!forTargets)
+                Widgets.Hint(reason);
+            using var greyed = ImRaii.Disabled(!forTargets);
             if (DrawLayerFields(profile, layer))
             {
                 _s.Profiles.MarkDirty(profile);
@@ -500,7 +505,52 @@ internal sealed class LayerEditor
         return true;
     }
 
-    private (bool Available, string Reason) Availability(string kind)
+    /// <summary> Plugin availability first, then whether any of the profile's targets can take the layer's section (see <see cref="TargetSupport"/>). </summary>
+    private (bool Available, string Reason) Availability(Profile profile, string kind)
+    {
+        var (available, reason) = PluginAvailability(kind);
+        if (!available)
+            return (false, reason);
+        return TargetSupport(profile, kind) is { } why ? (false, why) : (true, string.Empty);
+    }
+
+    /// <summary>
+    /// Null when at least one target of the profile can take what the layer kind writes (your own character takes everything); the
+    /// reason otherwise. A profile without targets is treated as yours, so editing stays possible while targets are still being chosen.
+    /// </summary>
+    private static string? TargetSupport(Profile profile, string kind)
+    {
+        if (profile.Targets.Count == 0 || profile.Targets.Any(t => t.IsLocal))
+            return null;
+
+        var section = SectionOf(kind);
+        if (section is null || profile.Targets.Any(t => TargetCapabilities.Supports(t.Kind, section.Value)))
+            return null;
+
+        var reasons = profile.Targets.Select(t => t.Kind).Distinct().Select(k => TargetCapabilities.Reason(k, section.Value)).Where(r => r is not null).Distinct();
+        return $"{TargetCapabilities.Describe(section.Value)} cannot be applied to any target of this profile: {string.Join(" ", reasons)}";
+    }
+
+    /// <summary> The design section a layer kind writes, or null for kinds that do not map onto one. </summary>
+    private static DesignSection? SectionOf(string kind)
+        => kind switch
+        {
+            GlamourerLayer.KindName        => DesignSection.Glamourer,
+            EquipmentLayer.KindName        => DesignSection.Glamourer,
+            EquipmentCleanseLayer.KindName => DesignSection.Glamourer,
+            DyeCleanseLayer.KindName       => DesignSection.Glamourer,
+            AppearanceLayer.KindName       => DesignSection.Glamourer,
+            VitrineDesignLayer.KindName    => DesignSection.Glamourer,
+            PenumbraAdjustLayer.KindName   => DesignSection.Mods,
+            HonorificLayer.KindName        => DesignSection.Honorific,
+            MoodlesLayer.KindName          => DesignSection.Moodles,
+            CustomizePlusLayer.KindName    => DesignSection.CustomizePlus,
+            SimpleHeelsLayer.KindName      => DesignSection.SimpleHeels,
+            DecalLayer.KindName            => DesignSection.Decals,
+            _                              => null,
+        };
+
+    private (bool Available, string Reason) PluginAvailability(string kind)
         => kind switch
         {
             GlamourerLayer.KindName      => (_s.Glamourer.Available, "Glamourer is not loaded."),

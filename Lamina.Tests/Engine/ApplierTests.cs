@@ -12,7 +12,7 @@ public class ApplierTests
         => DesignDiffer.Diff(store, design, force: false);
 
     [Fact]
-    public void Penumbra_CleanSlateBeforeWrites_WithKeyAndSource()
+    public void Penumbra_WritesEveryMod_RecordsTheDirectories_NoCleanSlate()
     {
         var rig = new EngineRig();
         rig.Penumbra.AddMod("ModA");
@@ -26,9 +26,11 @@ public class ApplierTests
         var info = rig.Applier.Apply(design, Full(design, rig.Store), Designs.Safe());
 
         var calls = rig.PenumbraCalls;
-        Assert.Equal("RemoveAllTemporaryModSettings", calls[0]);
+        // Never a clean slate: other targets may write into the same collection. Only the directories this store wrote are ever removed.
+        Assert.DoesNotContain("RemoveAllTemporaryModSettings", calls);
+        Assert.DoesNotContain("RemoveTemporaryModSettings", calls);
         Assert.Equal(2, calls.Count(c => c == "SetTemporaryModSettings"));
-        Assert.True(calls.IndexOf("RemoveAllTemporaryModSettings") < calls.IndexOf("SetTemporaryModSettings"));
+        Assert.Equal(new[] { "ModA", "ModB" }, rig.Store.ModDirectories.OrderBy(d => d));
 
         var written = rig.Penumbra.TempSettingsIn(rig.Collection);
         Assert.True(written["ModA"].Enabled);

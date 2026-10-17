@@ -88,21 +88,78 @@ public sealed class CleanupService
     public CleanupResult CleanupForProfileSwitch()
         => Cleanup("profile switch", redrawNow: false, revertGlamourer: false, resetEvaluator: false);
 
+
+    /// <summary>
+    /// Best-effort cleanup for a target that is not rendered right now, so nothing of Lamina's lingers in the plugins that keep
+    /// state by identity: Glamourer's player state is unlocked and reverted by name (players only; Glamourer matches absent players
+    /// by name), Lamina's temporary Customize+ profile is deleted by its id. Mods are removed from the target's collection, since
+    /// collections are not tied to presence. Honorific, Moodles and Simple Heels need the actor and stay recorded in the store, so a
+    /// later cleanup finishes them when the character is rendered again. Resets the store sections it undid.
+    /// </summary>
+    /// <param name="playerName"> The character's name for Glamourer's name-based calls, or null for a non-player (nothing to do there). </param>
+    public CleanupResult CleanupAbsent(string? playerName, string reason)
+    {
+        var problems = new List<string>();
+        var config   = _config();
+
+        var modsCleared = false;
+        if ((_store.ModsApplied || _store.DecalsApplied) && _penumbra.Available && _collectionId() is { } collection)
+        {
+            modsCleared = TemporaryModSettings.RemoveWritten(_penumbra, collection, _store, problems);
+            if (_store.DecalsApplied)
+                _decals?.Clear(collection);
+        }
+        _store.ForgetMods();
+        _store.ForgetDecals();
+
+        var reverted = false;
+        if (_store.GlamourerApplied && _glamourer.Available && !string.IsNullOrEmpty(playerName))
+        {
+            var code = _glamourer.UnlockAndRevertByName(playerName, config.NoRuleFallback == NoRuleFallback.Automation);
+            reverted = code is GlamourerApiEc.Success or GlamourerApiEc.NothingDone;
+            if (!reverted)
+                problems.Add($"Glamourer revert by name: {code}");
+        }
+        if (reverted || !_store.GlamourerApplied)
+        {
+            _store.GlamourerHash       = null;
+            _store.LastGlamourerDesign = null;
+        }
+
+        var customizePlusCleared = false;
+        if (_store.CustomizePlusApplied && _customizePlus.Available && _store.CustomizePlusTemporaryId is { } tempId)
+        {
+            var code = _customizePlus.DeleteTemporaryProfileById(tempId);
+            customizePlusCleared = code is CustomizePlusEc.Success or CustomizePlusEc.ProfileNotFound;
+            if (!customizePlusCleared)
+                problems.Add($"Customize+ DeleteTemporaryProfileByUniqueId: {code}");
+        }
+        if (customizePlusCleared || !_store.CustomizePlusApplied)
+        {
+            _store.CustomizePlusHash        = null;
+            _store.CustomizePlusTemporaryId = null;
+        }
+
+        // The design hash must not claim the design is fully applied any more: whatever stays recorded is retried when the actor returns.
+        _store.DesignHash = null;
+        _store.LastDesign = null;
+
+        _log?.Invoke($"Cleanup while absent ({reason}): mods cleared {modsCleared}, glamourer reverted {reverted}, customize+ cleared {customizePlusCleared}"
+                   + (_store.AnythingApplied ? "; waiting for the character to finish the rest" : string.Empty)
+                   + (problems.Count > 0 ? $", problems: {string.Join("; ", problems)}" : string.Empty));
+
+        return new CleanupResult(reason, modsCleared, false, reverted, false, 0, 0, false, problems, customizePlusCleared, false);
+    }
     private CleanupResult Cleanup(string reason, bool redrawNow, bool revertGlamourer, bool resetEvaluator)
     {
         var problems = new List<string>();
         var index    = _localPlayerIndex();
         var config   = _config();
 
-        // 1. Penumbra: remove everything Lamina wrote, in one call.
+        // 1. Penumbra: remove the mods this target wrote. Only those: other targets may share the collection.
         var modsCleared = false;
         if (_penumbra.Available && _collectionId() is { } collection)
-        {
-            var code = _penumbra.RemoveAllTemporaryModSettings(collection);
-            modsCleared = code is PenumbraApiEc.Success;
-            if (code is not PenumbraApiEc.Success and not PenumbraApiEc.NothingChanged)
-                problems.Add($"RemoveAllTemporaryModSettings: {code}");
-        }
+            modsCleared = TemporaryModSettings.RemoveWritten(_penumbra, collection, _store, problems);
 
         // 1b. Decals: remove Lamina's decal temporary mod (the baked textures stay in the cache folder for reuse).
         var decalsCleared = false;

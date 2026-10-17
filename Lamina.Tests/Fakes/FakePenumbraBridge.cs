@@ -138,6 +138,19 @@ public sealed class FakePenumbraBridge : FakeBridgeBase, IPenumbraBridge
         return PenumbraApiEc.Success;
     }
 
+    public PenumbraApiEc RemoveTemporaryModSettings(Guid collectionId, string modDirectory)
+    {
+        Record(nameof(RemoveTemporaryModSettings), collectionId, modDirectory);
+        if (!Available)
+            return PenumbraApiEc.UnknownError;
+        if (!Collections.ContainsKey(collectionId))
+            return PenumbraApiEc.CollectionMissing;
+
+        return TemporarySettings.TryGetValue(collectionId, out var perMod) && perMod.Remove(modDirectory)
+            ? PenumbraApiEc.Success
+            : PenumbraApiEc.NothingChanged;
+    }
+
     public void RedrawObject(int objectIndex)
     {
         Record(nameof(RedrawObject), objectIndex);

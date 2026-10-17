@@ -15,16 +15,25 @@ namespace Lamina.Runtime.Engine;
 /// <summary>
 /// Drives the pipeline from the framework thread (TDD 7.1): listens to the state tracker, profile store, Vitrine and the
 /// bridges, re-evaluates when something relevant changed or an evaluator timer elapsed, applies once per real change and
-/// schedules at most one redraw. Owns collection detection (read only: the player assigns the collection in Penumbra) and
-/// the master toggle.
+/// schedules at most one redraw per target. Owns collection detection (read only: the player assigns collections in Penumbra)
+/// and the master toggle.
+/// <para>
+/// One <see cref="TargetSession"/> per target: the local player always, plus one for every other character an enabled profile
+/// names (another player by name and home world, or a humanoid NPC). Those sessions apply while the character is rendered near
+/// you, re-assert when it comes back, and undo what they can by identity when a profile is switched off while it is away.
+/// Conditions are evaluated against your own game state for every target; the target only receives the result.
+/// </para>
 /// </summary>
 public sealed class LaminaEngine : ILaminaEngine, IDisposable
 {
-    private static readonly TimeSpan ReassertThrottle    = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan SlowTickInterval    = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ReassertThrottle     = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan SlowTickInterval     = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan NamesRefreshInterval = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan MoodlesOwnCallWindow = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan MoodlesEventThrottle = TimeSpan.FromSeconds(1);
+
+    /// <summary> After an apply with problems, wait this long before trying again so a persistent failure does not hammer the IPC every tick. </summary>
+    private static readonly TimeSpan ApplyRetryBackoff = TimeSpan.FromSeconds(3);
 
     private readonly ProfileStore _profiles;
     private readonly StateTracker _tracker;
@@ -50,29 +59,24 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     private readonly GameCatalog _catalog;
     private readonly IPluginLog _log;
     private readonly TickClock _clock;
+    private readonly TargetResolver _targets;
+    private readonly HashSet<Guid> _sweptCollections = new();
 
-    private readonly AppliedStateStore _store = new();
-    private readonly RedrawScheduler _redraw;
-    private readonly Applier _applier;
-    private readonly CleanupService _cleanup;
-    private readonly EngineCore _core;
+    private readonly TargetSession _local;
+    private readonly List<TargetSession> _others = new();
 
     private bool _dirty = true;
     private bool _force;
-
-    /// <summary> After an apply with problems, wait this long before trying again so a persistent failure does not hammer the IPC every tick. </summary>
-    private static readonly TimeSpan ApplyRetryBackoff = TimeSpan.FromSeconds(3);
-    private DateTime? _retryDue;
+    private bool _sessionsStale = true;
     private bool _applying;
-    private bool _reassertGlamourer;
     private bool _lastHoldState;
     private DateTime _lastReassert     = DateTime.MinValue;
     private DateTime _lastSlowTick     = DateTime.MinValue;
     private DateTime _lastNamesRefresh = DateTime.MinValue;
     private DateTime _lastMoodlesEvent = DateTime.MinValue;
     private DateTime? _timerDue;
-    private CollectionStatus _collectionStatus = CollectionStatus.PenumbraMissing;
-    private Guid? _lastAssignedCollection;
+    private DateTime? _retryDue;
+    private bool _collectionRefreshPending;
     private bool _disposed;
 
     /// <summary>
@@ -87,69 +91,69 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         IClientState clientState, ICondition condition, GameCatalog catalog, IPluginLog log, TickClock? clock = null,
         IDecalPublisher? decalPublisher = null, ISkinMeshProvider? skinMeshes = null)
     {
-        _profiles    = profiles;
-        _tracker     = tracker;
-        _evaluator   = evaluator;
-        _compositor  = compositor;
-        _resolver    = resolver;
-        _cache       = cache;
-        _glamourer   = glamourer;
-        _penumbra    = penumbra;
-        _honorific   = honorific;
-        _moodles     = moodles;
+        _profiles           = profiles;
+        _tracker            = tracker;
+        _evaluator          = evaluator;
+        _compositor         = compositor;
+        _resolver           = resolver;
+        _cache              = cache;
+        _glamourer          = glamourer;
+        _penumbra           = penumbra;
+        _honorific          = honorific;
+        _moodles            = moodles;
         _customizePlus      = customizePlus;
         _heels              = heels;
         _customizePlusCache = customizePlusCache;
-        _vitrine     = vitrine;
-        _decals      = decalPublisher;
-        _meshes      = skinMeshes;
-        _framework   = framework;
-        _objects     = objects;
-        _clientState = clientState;
-        _condition   = condition;
-        _catalog     = catalog;
-        _log         = log;
-        _clock       = clock ?? new TickClock();
+        _vitrine            = vitrine;
+        _decals             = decalPublisher;
+        _meshes             = skinMeshes;
+        _framework          = framework;
+        _objects            = objects;
+        _clientState        = clientState;
+        _condition          = condition;
+        _catalog            = catalog;
+        _log                = log;
+        _clock              = clock ?? new TickClock();
+        _targets            = new TargetResolver(objects, framework, _catalog.WorldName);
 
-        _redraw  = new RedrawScheduler(_penumbra, LocalPlayerIndex, m => _log.Debug(m));
-        _applier = new Applier(_glamourer, _penumbra, _honorific, _moodles, _customizePlus, _heels, _decals, _store, _redraw, () => _profiles.Config, () => CollectionId,
-            () => _collectionStatus, LocalPlayerIndex, LocalPlayerAddress, _clock.Read, m => _log.Debug(m), DrawObjectKey);
-        _cleanup = new CleanupService(_glamourer, _penumbra, _honorific, _moodles, _customizePlus, _heels, _decals, _store, _redraw, _evaluator, () => _profiles.Config,
-            () => CollectionId, LocalPlayerIndex, LocalPlayerAddress, _clock.Read, m => _log.Information(m));
-        _core = new EngineCore(_compositor, _resolver, _evaluator, _applier, _cleanup, _store, () => _profiles.Config);
+        _local = new TargetSession(Target.LocalPlayer(), _ => LocalActor(), _glamourer, _penumbra, _honorific, _moodles, _customizePlus, _heels,
+            _decals, _evaluator, _compositor, _resolver, () => _profiles.Config, _clock.Read, m => _log.Debug(m), DrawObjectKey);
         if (_decals is not null)
-            _followUp = new DecalFollowUp(_store, _clock.Read, DrawObject, DecalsReady, () => _decals.Busy, PublishDecals, m => _log.Debug(m));
+            _followUp = new DecalFollowUp(_local.Store, _clock.Read, DrawObject, DecalsReady, () => _decals.Busy, PublishDecals, m => _log.Debug(m));
 
         _lastHoldState = _profiles.Config.HoldGlamourerState;
 
-        _tracker.SnapshotChanged       += OnSnapshotChanged;
-        _profiles.Changed              += OnProfilesChanged;
-        _vitrine.DesignsChanged        += OnVitrineChanged;
-        _glamourer.AvailabilityChanged += OnGlamourerAvailability;
-        _penumbra.AvailabilityChanged  += OnPenumbraAvailability;
-        _honorific.AvailabilityChanged += Invalidate;
-        _moodles.AvailabilityChanged   += Invalidate;
+        _tracker.SnapshotChanged           += OnSnapshotChanged;
+        _profiles.Changed                  += OnProfilesChanged;
+        _vitrine.DesignsChanged            += OnVitrineChanged;
+        _glamourer.AvailabilityChanged     += OnGlamourerAvailability;
+        _penumbra.AvailabilityChanged      += OnPenumbraAvailability;
+        _honorific.AvailabilityChanged     += Invalidate;
+        _moodles.AvailabilityChanged       += Invalidate;
         _customizePlus.AvailabilityChanged += OnCustomizePlusAvailability;
         _customizePlus.ProfilesChanged     += OnCustomizePlusProfilesChanged;
         _heels.AvailabilityChanged         += OnHeelsAvailability;
         _heels.LocalOffsetChanged          += OnHeelsLocalOffsetChanged;
-        _glamourer.StateFinalized      += OnStateFinalized;
+        _glamourer.StateFinalized          += OnStateFinalized;
         if (_moodles is IMoodlesStatusEvents moodleEvents)
             moodleEvents.StatusManagerModified += OnMoodlesStatusManagerModified;
-        _clientState.Login             += OnLogin;
-        _clientState.Logout            += OnLogout;
-        _condition.ConditionChange     += OnConditionChange;
-        _framework.Update              += OnFrameworkUpdate;
+        _clientState.Login                 += OnLogin;
+        _clientState.Logout                += OnLogout;
+        _clientState.TerritoryChanged      += OnTerritoryChanged;
+        _condition.ConditionChange         += OnConditionChange;
+        _framework.Update                  += OnFrameworkUpdate;
         if (_decals is not null)
             _decals.Completed += OnDecalPublishCompleted;
-        _penumbra.GameObjectRedrawn    += OnGameObjectRedrawn;
+        _penumbra.GameObjectRedrawn        += OnGameObjectRedrawn;
 
         // Dalamud constructs plugins off the main thread and the object table refuses off-thread access,
         // so the first collection check runs on the first framework tick instead of here.
         _collectionRefreshPending = true;
     }
 
-    private bool _collectionRefreshPending;
+    /// <summary> Every session, the local player first. </summary>
+    private IEnumerable<TargetSession> Sessions
+        => _others.Prepend(_local);
 
     // ---- ILaminaEngine ----------------------------------------------------------------------------
 
@@ -162,31 +166,54 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         => _tracker.Current;
 
     /// <inheritdoc/>
-    public VirtualDesign? LastDesign { get; private set; }
+    public VirtualDesign? LastDesign
+        => _local.LastDesign;
 
     /// <inheritdoc/>
-    public EvaluationReport? LastReport { get; private set; }
+    public EvaluationReport? LastReport
+        => _local.LastReport;
 
     /// <inheritdoc/>
-    public ApplyInfo? LastApply { get; private set; }
+    public ApplyInfo? LastApply
+        => _local.LastApply;
 
     /// <inheritdoc/>
     public bool RedrawPending
-        => _redraw.Pending;
+        => Sessions.Any(s => s.Redraw.Pending);
 
     /// <inheritdoc/>
     public CollectionStatus CollectionStatus
-        => _collectionStatus;
+        => _local.CollectionStatus;
 
     /// <inheritdoc/>
-    public Guid? CollectionId { get; private set; }
+    public Guid? CollectionId
+        => _local.CollectionId;
 
     /// <inheritdoc/>
     public event Action? Applied;
 
-    /// <summary> The applied-state store, for the debug overlay. </summary>
+    /// <summary> The local player's applied-state store, for the debug overlay. </summary>
     public AppliedStateStore AppliedState
-        => _store;
+        => _local.Store;
+
+    /// <inheritdoc/>
+    public IReadOnlyList<TargetStatus> Targets
+        => Sessions.Select(s => new TargetStatus(s.Target, s.Present, s.Actor?.Index, s.Profile?.Name ?? _profiles.ActiveProfileFor(s.Target)?.Name,
+            s.CollectionStatus, CollectionNameFor(s), s.Dropped, s.LastApply, s.Shadowed, s.Retired)).ToList();
+
+    /// <inheritdoc/>
+    public IReadOnlyList<TargetCandidate> NearbyCandidates()
+    {
+        try
+        {
+            return _targets.Candidates();
+        }
+        catch (Exception ex)
+        {
+            _log.Debug(ex, "Listing nearby characters failed.");
+            return Array.Empty<TargetCandidate>();
+        }
+    }
 
     /// <inheritdoc/>
     public void SetEnabled(bool enabled)
@@ -211,24 +238,8 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     /// <inheritdoc/>
     public void RefreshCollection()
     {
-        var previous = _collectionStatus;
-        if (!_penumbra.Available)
-        {
-            CollectionId      = null;
-            _collectionStatus = CollectionStatus.PenumbraMissing;
-        }
-        else
-        {
-            CollectionId = _penumbra.FindCollection(_profiles.Config.CollectionName);
-            if (CollectionId is null)
-                _collectionStatus = CollectionStatus.NotFound;
-            else if (LocalPlayerIndex() is { } index)
-                _collectionStatus = ReadAssignment(index);
-            else
-                _collectionStatus = previous is CollectionStatus.PenumbraMissing or CollectionStatus.NotFound ? CollectionStatus.NotAssigned : previous;
-        }
-
-        OnCollectionStatusChanged(previous);
+        foreach (var session in Sessions)
+            RefreshCollectionFor(session);
     }
 
     /// <inheritdoc/>
@@ -245,33 +256,33 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     public void Invalidate()
         => _dirty = true;
 
-    /// <summary> Forgets what Lamina wrote into the collection (someone else wrote there with Lamina's key) so the next apply rewrites it. </summary>
+    /// <summary> Forgets what Lamina wrote into the collections (someone else wrote there with Lamina's key) so the next apply rewrites them. </summary>
     public void InvalidateMods()
     {
-        _store.ModsHash   = null;
-        _store.DesignHash = null;
-        _dirty            = true;
+        foreach (var session in Sessions)
+            session.ForgetMods();
+        _dirty = true;
     }
 
     /// <inheritdoc/>
     public bool RedrawNow()
     {
-        _redraw.Request();
-        return _redraw.RedrawNow();
+        _local.Redraw.Request();
+        return _local.Redraw.RedrawNow();
     }
 
     /// <inheritdoc/>
     public bool DecalsApplied
-        => _store.DecalsApplied;
+        => _local.Store.DecalsApplied;
 
     /// <inheritdoc/>
     public void ForgetDecals(bool redraw)
     {
-        _store.ForgetDecals();
-        _store.DesignHash = null;
+        _local.Store.ForgetDecals();
+        _local.Store.DesignHash = null;
         _followUp?.Reset();
         if (redraw)
-            _redraw.Request();
+            _local.Redraw.Request();
         _dirty = true;
     }
 
@@ -285,14 +296,11 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         var s  = _tracker.Current;
         var sb = new StringBuilder();
         var profile = _profiles.ActiveProfileFor(Target.LocalPlayer());
-        sb.Append("Lamina: ").Append(Enabled ? "enabled" : "disabled").Append(" · profile: ").AppendLine(profile?.Name ?? "(none)");
-        sb.Append("Collection: ").Append(_profiles.Config.CollectionName).Append(" · ").AppendLine(_collectionStatus switch
-        {
-            CollectionStatus.PenumbraMissing => "Penumbra missing",
-            CollectionStatus.NotFound        => "not found in Penumbra (create it there)",
-            CollectionStatus.NotAssigned     => "not assigned to your character in Penumbra (mods skipped)",
-            _                                => "assigned to your character",
-        });
+        sb.Append("Lamina: ").Append(Enabled ? "enabled" : "disabled").Append(" · profile: ").Append(profile?.Name ?? "(none)");
+        if (_others.Count > 0)
+            sb.Append(" · other targets: ").Append(_others.Count);
+        sb.AppendLine();
+        sb.Append("Collection: ").Append(_profiles.Config.CollectionName).Append(" · ").AppendLine(DescribeCollection(_local.CollectionStatus, local: true));
         sb.Append("Integrations: ")
           .Append(Flag("Glamourer", _glamourer.Available)).Append(", ")
           .Append(Flag("Penumbra", _penumbra.Available)).Append(", ")
@@ -311,35 +319,78 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         if (s.IsSanctuary) flags.Add("Sanctuary");
         if (s.IsIndoors) flags.Add("Indoors");
         sb.Append("Flags: ").AppendLine(flags.Count == 0 ? "(none)" : string.Join(", ", flags));
-        if (LastApply is { } apply)
-        {
-            sb.Append("Last apply: ").Append(apply.AtUtc.ToLocalTime().ToString("HH:mm:ss")).Append(" · glamourer ").Append(apply.GlamourerApplied)
-              .Append(" · mods ").Append(apply.ModsWritten).Append(" · decals ").Append(apply.DecalsPublished ? "published" : apply.DecalsDeferred ? "pending redraw" : "none")
-              .Append(" · redraw ").Append(apply.RedrawRequested ? (apply.RedrawDeferred ? "deferred" : "yes") : "no");
-            if (apply.Problems.Count > 0)
-                sb.Append(" · problems: ").Append(string.Join("; ", apply.Problems));
-            sb.AppendLine();
-        }
-
-        if (_redraw.Pending)
+        AppendApply(sb, _local.LastApply);
+        if (_local.Redraw.Pending)
             sb.AppendLine("Redraw pending.");
 
-        if (LastDesign is { } design && profile is not null)
-        {
-            var groups = profile.PassGroups.ToDictionary(g => g.Id, g => g.Name);
-            var passes = profile.PassGroups.SelectMany(g => g.Passes).ToDictionary(p => p.Id, p => p.Name);
-            sb.AppendLine(DesignExplainer.Explain(design,
-                id => groups.TryGetValue(id, out var n) ? n : id.ToString(),
-                id => passes.TryGetValue(id, out var n) ? n : id.ToString(),
-                LastReport?.SkippedLayers));
-        }
+        if (_local.LastDesign is { } design && profile is not null)
+            sb.AppendLine(Explain(design, profile, _local.LastReport));
         else
-        {
             sb.AppendLine("No design evaluated yet.");
+
+        foreach (var other in _others)
+        {
+            sb.Append("Target ").Append(DescribeTarget(other.Target)).Append(": ");
+            var active = _profiles.ActiveProfileFor(other.Target);
+            sb.Append("profile ").Append(active?.Name ?? "(none)");
+            if (other.Retired) sb.Append(" (removed, undoing)");
+            if (other.Shadowed) sb.Append(" · shadowed by your Local Player profile");
+            sb.Append(other.Present ? $" · rendered at #{other.Actor?.Index}" : " · not rendered right now");
+            var collection = CollectionNameFor(other);
+            sb.Append(" · collection ").Append(collection is null ? "(none)" : $"\"{collection}\"").Append(' ').Append(DescribeCollection(other.CollectionStatus, local: false));
+            sb.AppendLine();
+            foreach (var dropped in other.Dropped)
+                sb.Append("  · ").AppendLine(dropped);
+            AppendApply(sb, other.LastApply, "  ");
+            if (other.LastDesign is { } otherDesign && active is not null && !otherDesign.IsEmpty)
+                sb.AppendLine(Explain(otherDesign, active, other.LastReport));
         }
 
         return sb.ToString().TrimEnd();
     }
+
+    private string Explain(VirtualDesign design, Profile profile, EvaluationReport? report)
+    {
+        var groups = profile.PassGroups.ToDictionary(g => g.Id, g => g.Name);
+        var passes = profile.PassGroups.SelectMany(g => g.Passes).ToDictionary(p => p.Id, p => p.Name);
+        return DesignExplainer.Explain(design,
+            id => groups.TryGetValue(id, out var n) ? n : id.ToString(),
+            id => passes.TryGetValue(id, out var n) ? n : id.ToString(),
+            report?.SkippedLayers);
+    }
+
+    private static void AppendApply(StringBuilder sb, ApplyInfo? apply, string indent = "")
+    {
+        if (apply is null)
+            return;
+
+        sb.Append(indent).Append("Last apply: ").Append(apply.AtUtc.ToLocalTime().ToString("HH:mm:ss")).Append(" · glamourer ").Append(apply.GlamourerApplied)
+          .Append(" · mods ").Append(apply.ModsWritten).Append(" · decals ").Append(apply.DecalsPublished ? "published" : apply.DecalsDeferred ? "pending redraw" : "none")
+          .Append(" · redraw ").Append(apply.RedrawRequested ? (apply.RedrawDeferred ? "deferred" : "yes") : "no");
+        if (apply.Problems.Count > 0)
+            sb.Append(" · problems: ").Append(string.Join("; ", apply.Problems));
+        sb.AppendLine();
+    }
+
+    private static string DescribeCollection(CollectionStatus status, bool local)
+        => status switch
+        {
+            CollectionStatus.PenumbraMissing => "Penumbra missing",
+            CollectionStatus.NotFound        => "not found in Penumbra (create it there)",
+            CollectionStatus.NotConfigured   => "no collection chosen (mods skipped)",
+            CollectionStatus.NotAssigned     => local
+                ? "not assigned to your character in Penumbra (mods skipped)"
+                : "mods written, but the character is not assigned to it in Penumbra (they do not show on them)",
+            _                                => local ? "assigned to your character" : "assigned to that character",
+        };
+
+    private string DescribeTarget(Target target)
+        => target.Kind switch
+        {
+            TargetKind.LocalPlayer => "Local Player",
+            TargetKind.OtherPlayer => $"{target.Name}@{_catalog.WorldName(target.WorldId ?? 0)}",
+            _                      => $"{target.Name} (NPC)",
+        };
 
     // ---- loop -------------------------------------------------------------------------------------
 
@@ -363,6 +414,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
             _collectionRefreshPending = false;
             try
             {
+                SyncSessions();
                 RefreshCollection();
             }
             catch (Exception ex)
@@ -379,15 +431,26 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
                 _dirty    = true;
             }
 
-            if (_reassertGlamourer && now - _lastReassert >= ReassertThrottle)
+            if (_retryDue is { } retry && now >= retry)
             {
-                // Glamourer automation wrote over Lamina's state: forget only the Glamourer section so the normal diff
-                // re-applies it. Never a forced full apply (that would clear and rewrite every mod and redraw).
-                _reassertGlamourer   = false;
-                _lastReassert        = now;
-                _store.GlamourerHash = null;
-                _store.DesignHash    = null;
-                _dirty               = true;
+                _retryDue = null;
+                _dirty    = true;
+            }
+
+            if (now - _lastReassert >= ReassertThrottle)
+            {
+                foreach (var session in Sessions)
+                {
+                    if (!session.ReassertGlamourer)
+                        continue;
+
+                    // Glamourer automation wrote over Lamina's state: forget only the Glamourer section so the normal diff
+                    // re-applies it. Never a forced full apply (that would clear and rewrite every mod and redraw).
+                    session.ReassertGlamourer = false;
+                    _lastReassert             = now;
+                    session.ForgetGlamourer();
+                    _dirty = true;
+                }
             }
 
             CheckHoldStateFlip();
@@ -401,10 +464,14 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
             if (_dirty)
                 Evaluate(now);
 
-            if (_redraw.Tick(_tracker.Current, _profiles.Config.RedrawPolicy))
-                _log.Information("Redraw sent to Penumbra.");
-            else if (_redraw.Pending && _tracker.Current.RedrawUnsafe)
-                _log.Debug("Redraw deferred: unsafe right now.");
+            var policy = _profiles.Config.RedrawPolicy;
+            foreach (var session in Sessions)
+            {
+                if (session.Redraw.Tick(_tracker.Current, policy))
+                    _log.Information(session.Target.IsLocal ? "Redraw sent to Penumbra." : $"Redraw of {DescribeTarget(session.Target)} sent to Penumbra.");
+                else if (session.Redraw.Pending && _tracker.Current.RedrawUnsafe)
+                    _log.Debug("Redraw deferred: unsafe right now.");
+            }
 
             // Decals wait for the redrawn character to load, then publish against what is drawn.
             _followUp?.Tick();
@@ -419,19 +486,31 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
     private void SlowTick(DateTime now)
     {
-        // Opt-in / opt-out detection: the player may (un)assign the collection in Penumbra at any time.
+        // Opt-in / opt-out detection: the player may (un)assign a collection in Penumbra at any time.
         if (_penumbra.Available)
         {
-            if (_collectionStatus is CollectionStatus.PenumbraMissing or CollectionStatus.NotFound)
+            foreach (var session in Sessions)
             {
-                RefreshCollection();
+                if (session.CollectionStatus is CollectionStatus.PenumbraMissing or CollectionStatus.NotFound or CollectionStatus.NotConfigured)
+                {
+                    RefreshCollectionFor(session);
+                }
+                else if (session.CollectionId is not null && session.Refresh(now) is { } actor)
+                {
+                    var previous = session.CollectionStatus;
+                    session.CollectionStatus = ReadAssignment(session, actor.Index);
+                    OnCollectionStatusChanged(session, previous);
+                }
             }
-            else if (CollectionId is not null && LocalPlayerIndex() is { } index)
-            {
-                var previous = _collectionStatus;
-                _collectionStatus = ReadAssignment(index);
-                OnCollectionStatusChanged(previous);
-            }
+        }
+
+        // Characters come and go without any event: notice within a second.
+        foreach (var session in Sessions)
+        {
+            var was = session.Present;
+            session.Refresh(now);
+            if (was != session.Present)
+                _dirty = true;
         }
 
         if (_glamourer.Available && now - _lastNamesRefresh >= NamesRefreshInterval)
@@ -452,19 +531,62 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
             return;
 
         _lastHoldState = hold;
-        if (!_store.GlamourerApplied)
-            return;
-
-        if (!hold && _glamourer is IGlamourerUnlock unlock && LocalPlayerIndex() is { } index)
+        foreach (var session in Sessions)
         {
-            var code = unlock.Unlock(index);
-            _log.Debug($"Hold Glamourer state switched off: unlock returned {code}.");
+            if (!session.Store.GlamourerApplied)
+                continue;
+
+            if (!hold && _glamourer is IGlamourerUnlock unlock && session.Index() is { } index)
+            {
+                var code = unlock.Unlock(index);
+                _log.Debug($"Hold Glamourer state switched off: unlock of {DescribeTarget(session.Target)} returned {code}.");
+            }
+
+            // Re-apply so the state carries (or drops) the lock.
+            session.ForgetGlamourer();
+            _dirty = true;
+        }
+    }
+
+    /// <summary>
+    /// Keeps one session per non-local target an enabled profile names. Sessions whose target no profile wants any more are
+    /// retired: they keep running with no profile until everything Lamina applied is undone, then they are dropped.
+    /// </summary>
+    private void SyncSessions()
+    {
+        _sessionsStale = false;
+        var wanted = _profiles.Profiles.Where(p => p.Enabled).SelectMany(p => p.Targets).Where(t => !t.IsLocal).Distinct().ToList();
+        foreach (var target in wanted)
+        {
+            var session = _others.FirstOrDefault(o => o.Target.Equals(target));
+            if (session is null)
+            {
+                session = CreateSession(target);
+                _others.Add(session);
+                RefreshCollectionFor(session);
+                _log.Information($"Target added: {DescribeTarget(target)}.");
+            }
+            else
+            {
+                session.Retired = false;
+            }
         }
 
-        // Re-apply so the state carries (or drops) the lock.
-        _store.GlamourerHash = null;
-        _store.DesignHash    = null;
-        _dirty               = true;
+        foreach (var session in _others)
+        {
+            if (session.Retired || wanted.Contains(session.Target))
+                continue;
+            session.Retired = true;
+            _log.Information($"Target removed: {DescribeTarget(session.Target)}; undoing what Lamina applied.");
+        }
+    }
+
+    private TargetSession CreateSession(Target target)
+    {
+        var copy = new Target { Kind = target.Kind, Name = target.Name, WorldId = target.WorldId, DataId = target.DataId };
+        return new TargetSession(copy, now => _targets.IsLocalIdentity(copy) ? LocalActor() : _targets.Locate(copy, now),
+            _glamourer, _penumbra, _honorific, _moodles, _customizePlus, _heels, decals: null, _evaluator, _compositor, _resolver,
+            () => _profiles.Config, _clock.Read, m => _log.Debug($"[{DescribeTarget(copy)}] {m}"));
     }
 
     private void Evaluate(DateTime now)
@@ -477,96 +599,278 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         }
 
         // Keep the request alive until there is a player to apply to (loading screens, login).
-        if (!_clientState.IsLoggedIn || LocalPlayerIndex() is null)
+        if (!_clientState.IsLoggedIn || _local.Refresh(now) is null)
             return;
 
-        // Back off after a failed apply (keeps _dirty so the retry happens when due); a forced reapply skips the wait.
-        if (!_force && _retryDue is { } retryDue && now < retryDue)
-            return;
+        if (_sessionsStale)
+            SyncSessions();
 
         var snapshot = _tracker.Current;
-        var profile  = _profiles.ActiveProfileFor(Target.LocalPlayer());
         var force    = _force;
         _dirty = false;
         _force = false;
 
+        var matched    = new HashSet<Guid>();
+        var anyApplied = false;
+        var localProfile = _profiles.ActiveProfileFor(Target.LocalPlayer());
+        foreach (var session in Sessions.ToList())
+        {
+            var profile = session.Retired ? null : session.Target.IsLocal ? localProfile : _profiles.ActiveProfileFor(session.Target);
+            anyApplied |= StepSession(session, snapshot, profile, localProfile, force, now, matched);
+        }
+
+        // Random picks are kept for every pass that contributes to any target.
+        _compositor.RandomPicks.Retain(matched);
+
+        // Retired sessions leave once nothing of Lamina's is left on their character.
+        var dropped = _others.RemoveAll(o => o.Retired && !o.Store.AnythingApplied);
+        if (dropped > 0)
+            _log.Debug($"{dropped} retired target session(s) dropped.");
+
+        if (anyApplied)
+            Applied?.Invoke();
+
+        _timerDue = _evaluator.TimeUntilNextChange is { } wait ? now + wait : null;
+        var retries = Sessions.Select(s => s.RetryDue).Where(r => r is not null).ToList();
+        _retryDue = retries.Count > 0 ? retries.Min() : null;
+    }
+
+    /// <summary> Evaluates one target. Returns true when something was applied or cleaned up (the Applied event is due). </summary>
+    private bool StepSession(TargetSession session, GameStateSnapshot snapshot, Profile? profile, Profile? localProfile, bool force, DateTime now, HashSet<Guid> matched)
+    {
+        // A named player target that is you yields to a Local Player profile; two profiles must never fight over your character.
+        session.Shadowed = !session.Target.IsLocal && localProfile is not null && _targets.IsLocalIdentity(session.Target);
+        if (session.Shadowed)
+            profile = null;
+
+        var actor = session.Target.IsLocal ? session.Actor : session.Refresh(now);
+        if (actor is null)
+        {
+            if (session.WasPresent)
+            {
+                session.WasPresent        = false;
+                session.AbsentCleanupDone = false;
+                session.Redraw.Cancel();
+            }
+
+            session.Profile = profile;
+            if (profile is null && session.Store.AnythingApplied && !session.AbsentCleanupDone)
+            {
+                // Nothing to undo on an actor that is not there; take back what the plugins hold by identity and remember the rest.
+                session.AbsentCleanupDone = true;
+                _applying = true;
+                try
+                {
+                    session.Cleanup.CleanupAbsent(session.Target.Kind == TargetKind.OtherPlayer ? session.Target.Name : null,
+                        session.Retired ? "target removed" : "profile disabled");
+                }
+                finally
+                {
+                    _applying = false;
+                }
+
+                session.ForgetOutcome();
+                return true;
+            }
+
+            return false;
+        }
+
+        if (!session.WasPresent)
+        {
+            // Back on screen: re-assert everything Lamina holds for it (the plugins may or may not have kept it).
+            session.WasPresent        = true;
+            session.AbsentCleanupDone = false;
+            if (session.Store.AnythingApplied || profile is not null)
+                force = true;
+            if (!session.Target.IsLocal)
+                RefreshCollectionFor(session);
+        }
+
+        force |= session.Force;
+        session.Force = false;
+
+        // Back off after a failed apply (the engine wakes up when it is due); a forced reapply skips the wait.
+        if (!force && session.RetryDue is { } retryDue && now < retryDue)
+            return false;
+
+        session.Profile = profile;
         EngineStep step;
         _applying = true;
         try
         {
-            step = _core.Step(snapshot, profile, force);
+            step = session.Core.Step(snapshot, profile, force);
         }
         finally
         {
             _applying = false;
         }
 
-        LastDesign = step.Design;
-        LastReport = step.Report;
+        session.LastDesign = step.Design;
+        session.LastReport = step.Report;
+        session.Dropped    = step.Dropped;
+        if (step.Report is { } report)
+            foreach (var id in report.MatchedPassIds)
+                matched.Add(id);
+
         if (step.Apply is { } apply)
         {
-            LastApply = apply;
+            session.LastApply = apply;
+            var who = session.Target.IsLocal ? string.Empty : $"[{DescribeTarget(session.Target)}] ";
             if (apply.Problems.Count > 0)
             {
-                _log.Warning($"Apply problems: {string.Join("; ", apply.Problems)}");
-                _retryDue = now + ApplyRetryBackoff;
+                _log.Warning($"{who}Apply problems: {string.Join("; ", apply.Problems)}");
+                session.RetryDue = now + ApplyRetryBackoff;
             }
             else
             {
-                _log.Debug($"Applied {apply.DesignHash}: glamourer {apply.GlamourerApplied}, mods {apply.ModsWritten}, redraw {apply.RedrawRequested}");
-                _retryDue = null;
+                _log.Debug($"{who}Applied {apply.DesignHash}: glamourer {apply.GlamourerApplied}, mods {apply.ModsWritten}, redraw {apply.RedrawRequested}"
+                         + (step.Dropped.Count > 0 ? $"; dropped: {string.Join("; ", step.Dropped)}" : string.Empty));
+                session.RetryDue = null;
             }
-            Applied?.Invoke();
-        }
-        else if (step.ProfileSwitched)
-        {
-            Applied?.Invoke();
+
+            return true;
         }
 
-        _timerDue = _evaluator.TimeUntilNextChange is { } wait ? now + wait : null;
+        return step.ProfileSwitched;
     }
 
     // ---- collection -------------------------------------------------------------------------------
 
-    private CollectionStatus ReadAssignment(int index)
+    /// <summary>
+    /// The collection a session's mods go into: the Settings collection for the local player, and for another target the collection
+    /// named on it (taken from the enabled profile that names it) or, when none is, that same Settings collection.
+    /// </summary>
+    private string? CollectionNameFor(TargetSession session)
     {
-        var (valid, _, effective, _) = _penumbra.GetCollectionForObject(index);
-        return valid && CollectionId is { } collection && effective == collection ? CollectionStatus.Assigned : CollectionStatus.NotAssigned;
+        var name = _profiles.Config.CollectionName?.Trim();
+        if (!session.Target.IsLocal)
+        {
+            var instance = _profiles.Profiles.Where(p => p.Enabled).SelectMany(p => p.Targets).FirstOrDefault(t => t.Equals(session.Target))
+                        ?? _profiles.Profiles.SelectMany(p => p.Targets).FirstOrDefault(t => t.Equals(session.Target));
+            var own = instance?.CollectionName?.Trim();
+            if (!string.IsNullOrEmpty(own))
+                name = own;
+        }
+
+        return string.IsNullOrEmpty(name) ? null : name;
     }
 
-    private void OnCollectionStatusChanged(CollectionStatus previous)
+    private void RefreshCollectionFor(TargetSession session)
     {
-        if (_collectionStatus == CollectionStatus.Assigned)
-            _lastAssignedCollection = CollectionId;
+        var previous   = session.CollectionStatus;
+        var previousId = session.CollectionId;
+        var name       = CollectionNameFor(session);
+        if (!_penumbra.Available)
+        {
+            session.CollectionId     = null;
+            session.CollectionStatus = CollectionStatus.PenumbraMissing;
+        }
+        else if (name is null)
+        {
+            session.CollectionId     = null;
+            session.CollectionStatus = CollectionStatus.NotConfigured;
+        }
+        else
+        {
+            session.CollectionId = _penumbra.FindCollection(name);
+            if (session.CollectionId is null)
+                session.CollectionStatus = CollectionStatus.NotFound;
+            else if ((session.Target.IsLocal ? LocalActor() : session.Refresh(_clock.Now)) is { } actor)
+                session.CollectionStatus = ReadAssignment(session, actor.Index);
+            else
+                session.CollectionStatus = previous is CollectionStatus.PenumbraMissing or CollectionStatus.NotFound or CollectionStatus.NotConfigured
+                    ? CollectionStatus.NotAssigned
+                    : previous;
+        }
 
-        if (previous == _collectionStatus)
+        // The collection moved (renamed in Settings or on the target): take this target's mods out of the old one.
+        if (previousId is { } old && previousId != session.CollectionId && _penumbra.Available && (session.Store.ModsApplied || session.Store.DecalsApplied))
+        {
+            var problems = new List<string>();
+            TemporaryModSettings.RemoveWritten(_penumbra, old, session.Store, problems);
+            foreach (var problem in problems)
+                _log.Warning($"Could not clear Lamina's settings from the previous collection: {problem}");
+            if (session.Store.DecalsApplied)
+                _decals?.Clear(old);
+            session.ForgetMods();
+            _dirty = true;
+        }
+
+        if (session.CollectionId is { } found)
+            SweepOnce(found);
+
+        OnCollectionStatusChanged(session, previous);
+    }
+
+    /// <summary>
+    /// Once per collection and plugin lifetime, before any target writes there: removes temporary settings an earlier Lamina
+    /// instance left behind (crash, hot reload). Every later removal is per mod, since targets may share the collection.
+    /// </summary>
+    private void SweepOnce(Guid collection)
+    {
+        if (!_sweptCollections.Add(collection))
+            return;
+        if (Sessions.Any(s => s.CollectionId == collection && (s.Store.ModsApplied || s.Store.DecalsApplied)))
             return;
 
-        _log.Debug($"Collection status: {previous} → {_collectionStatus}");
+        var code = _penumbra.RemoveAllTemporaryModSettings(collection);
+        if (code is PenumbraApiEc.Success)
+            _log.Information("Removed temporary settings an earlier Lamina instance left in the collection.");
+        else if (code is not PenumbraApiEc.NothingChanged)
+            _log.Warning($"Could not sweep the collection before first use: {code}");
+    }
+
+    private CollectionStatus ReadAssignment(TargetSession session, int index)
+    {
+        var (valid, _, effective, _) = _penumbra.GetCollectionForObject(index);
+        return valid && session.CollectionId is { } collection && effective == collection ? CollectionStatus.Assigned : CollectionStatus.NotAssigned;
+    }
+
+    private void OnCollectionStatusChanged(TargetSession session, CollectionStatus previous)
+    {
+        if (session.CollectionStatus == CollectionStatus.Assigned)
+            session.LastAssignedCollection = session.CollectionId;
+
+        if (previous == session.CollectionStatus)
+            return;
+
+        var who = session.Target.IsLocal ? "your character" : DescribeTarget(session.Target);
+        _log.Debug($"Collection status ({who}): {previous} → {session.CollectionStatus}");
+
+        if (!session.Target.IsLocal)
+        {
+            // Another target's mods are written whether or not the character is assigned; the status only says whether they
+            // show on it. Rewrite on the next evaluation so a newly found (or newly assigned) collection gets them, with a redraw.
+            session.Store.ModsHash   = null;
+            session.Store.DesignHash = null;
+            _dirty = true;
+            return;
+        }
 
         if (previous == CollectionStatus.Assigned)
         {
             // Opt out: the player removed the assignment (or the collection vanished). Leave nothing of Lamina's behind.
-            if (_penumbra.Available && _lastAssignedCollection is { } old)
+            if (_penumbra.Available && session.LastAssignedCollection is { } old)
             {
-                var code = _penumbra.RemoveAllTemporaryModSettings(old);
-                if (code is not PenumbraApiEc.Success and not PenumbraApiEc.NothingChanged)
-                    _log.Warning($"Could not clear Lamina's settings from the previous collection: {code}");
-                if (_store.DecalsApplied)
+                var problems = new List<string>();
+                TemporaryModSettings.RemoveWritten(_penumbra, old, session.Store, problems);
+                foreach (var problem in problems)
+                    _log.Warning($"Could not clear Lamina's settings from the previous collection: {problem}");
+                if (session.Store.DecalsApplied)
                     _decals?.Clear(old);
             }
 
-            _store.ModsHash    = null;
-            _store.ModsWritten = 0;
-            _store.ForgetDecals();
-            _followUp?.Reset();
-            _log.Information("The Lamina collection is no longer assigned to your character; mods are skipped until it is assigned again in Penumbra.");
+            session.ForgetMods();
+            if (session.Target.IsLocal)
+                _followUp?.Reset();
+            _log.Information($"The Lamina collection is no longer assigned to {who}; mods are skipped until it is assigned again in Penumbra.");
         }
-        else if (_collectionStatus == CollectionStatus.Assigned)
+        else if (session.CollectionStatus == CollectionStatus.Assigned)
         {
             // Opt in: write the full mod state on the next evaluation.
-            _store.ModsHash   = null;
-            _store.DesignHash = null;
+            session.Store.ModsHash   = null;
+            session.Store.DesignHash = null;
         }
 
         _dirty = true;
@@ -578,10 +882,20 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         => _dirty = true;
 
     private void OnProfilesChanged()
-        => _dirty = true;
+    {
+        _sessionsStale = true;
+        _dirty         = true;
+    }
 
     private void OnVitrineChanged()
         => _dirty = true;
+
+    private void OnTerritoryChanged(uint territory)
+    {
+        // Every other character is gone; the resolver would notice per call, but a clean slate is cheaper.
+        _targets.Clear();
+        _dirty = true;
+    }
 
     private void OnGlamourerAvailability()
     {
@@ -592,24 +906,28 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         }
         else
         {
-            _store.GlamourerHash = null;
-            _store.DesignHash    = null;
+            foreach (var session in Sessions)
+                session.ForgetGlamourer();
         }
     }
 
     private void OnCustomizePlusAvailability()
     {
         _customizePlusCache.InvalidateAll();
-        if (!_customizePlus.Available)
+        foreach (var session in Sessions)
         {
-            // The temporary profile died with the plugin; nothing to undo, but the next apply must set it again.
-            _store.CustomizePlusHash        = null;
-            _store.CustomizePlusTemporaryId = null;
+            if (!_customizePlus.Available)
+            {
+                // The temporary profile died with the plugin; nothing to undo, but the next apply must set it again.
+                session.Store.CustomizePlusHash        = null;
+                session.Store.CustomizePlusTemporaryId = null;
+            }
+
+            // Either way the design hash no longer tells the whole story (the section was skipped or lost): diff again.
+            session.InvalidateDesign();
         }
 
-        // Either way the design hash no longer tells the whole story (the section was skipped or lost): diff again.
-        _store.DesignHash = null;
-        _dirty            = true;
+        _dirty = true;
     }
 
     /// <summary> Customize+ reported a profile change: its bones may differ, so the cached profiles are dropped and the design re-evaluated. </summary>
@@ -621,42 +939,50 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
     private void OnHeelsAvailability()
     {
-        if (!_heels.Available)
+        foreach (var session in Sessions)
         {
-            // Simple Heels forgets IPC registrations when it unloads; re-register on the next apply.
-            _store.HeelsSet  = null;
-            _store.HeelsBase = null;
+            if (!_heels.Available)
+            {
+                // Simple Heels forgets IPC registrations when it unloads; re-register on the next apply.
+                session.Store.HeelsSet  = null;
+                session.Store.HeelsBase = null;
+            }
+
+            session.InvalidateDesign();
         }
 
-        _store.DesignHash = null;
-        _dirty            = true;
+        _dirty = true;
     }
 
     /// <summary>
     /// The player's own Simple Heels offset changed (footwear swap, edited configuration). A relative registration was built on the
-    /// old value, so it is forgotten and the next evaluation registers again on the new base. Absolute registrations are unaffected.
+    /// old value, so it is forgotten and the next evaluation registers again on the new base. Absolute registrations (and every
+    /// other target, whose offsets are always absolute) are unaffected.
     /// </summary>
     private void OnHeelsLocalOffsetChanged(float offset)
     {
-        if (_store.HeelsSet is not { Relative: true } || _store.HeelsBase is not { } baseOffset || MathF.Abs(baseOffset - offset) < 0.0001f)
+        var store = _local.Store;
+        if (store.HeelsSet is not { Relative: true } || store.HeelsBase is not { } baseOffset || MathF.Abs(baseOffset - offset) < 0.0001f)
             return;
 
         _log.Debug($"Simple Heels: player offset changed {baseOffset:0.###} → {offset:0.###}; re-registering the relative offset.");
-        _store.HeelsSet   = null;
-        _store.HeelsBase  = null;
-        _store.DesignHash = null;
-        _dirty            = true;
+        store.HeelsSet   = null;
+        store.HeelsBase  = null;
+        store.DesignHash = null;
+        _dirty           = true;
     }
 
     private void OnPenumbraAvailability()
     {
         if (!_penumbra.Available)
         {
-            _store.ModsHash    = null;
-            _store.ModsWritten = 0;
-            _store.ForgetDecals();
+            foreach (var session in Sessions)
+            {
+                session.ForgetMods();
+                session.Redraw.Cancel();
+            }
+
             _followUp?.Reset();
-            _redraw.Cancel();
         }
 
         RefreshCollection();
@@ -669,22 +995,32 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         // must not cost a re-apply. Whether a locked state survives gearset changes is verified in game (TDD 11.2).
         if (type is not (StateFinalizationType.ReapplyAutomation or StateFinalizationType.RevertAutomation))
             return;
-        if (_applying || !_store.GlamourerApplied || address == 0 || address != LocalPlayerAddress())
+        if (_applying || address == 0)
             return;
 
-        _log.Debug($"Glamourer finalized {type} on the local player; re-asserting Lamina's state.");
-        _reassertGlamourer = true;
+        var session = SessionAt(address);
+        if (session is null || !session.Store.GlamourerApplied)
+            return;
+
+        _log.Debug($"Glamourer finalized {type} on {DescribeTarget(session.Target)}; re-asserting Lamina's state.");
+        session.ReassertGlamourer = true;
     }
 
     private void OnMoodlesStatusManagerModified(nint address)
     {
-        if (address == 0 || address != LocalPlayerAddress())
+        if (address == 0)
             return;
-        if (_store.MoodlesAdded.Count == 0 && _store.PresetsApplied.Count == 0)
+
+        var session = SessionAt(address);
+        if (session is null)
+            return;
+
+        var store = session.Store;
+        if (store.MoodlesAdded.Count == 0 && store.PresetsApplied.Count == 0)
             return;
 
         var now = _clock.Now;
-        if (_store.LastMoodlesCallUtc is { } own && now - own < MoodlesOwnCallWindow)
+        if (store.LastMoodlesCallUtc is { } own && now - own < MoodlesOwnCallWindow)
             return;
         if (now - _lastMoodlesEvent < MoodlesEventThrottle)
             return;
@@ -692,10 +1028,18 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         // Something else changed the status manager (a moodle expired or was removed): forget what Lamina added so the
         // next evaluation re-adds whatever the design still wants.
         _lastMoodlesEvent = now;
-        _store.MoodlesAdded.Clear();
-        _store.PresetsApplied.Clear();
-        _store.DesignHash = null;
-        _dirty            = true;
+        store.MoodlesAdded.Clear();
+        store.PresetsApplied.Clear();
+        store.DesignHash = null;
+        _dirty           = true;
+    }
+
+    /// <summary> The session whose character sits at this address, by the last known location (no table scan on the event path). </summary>
+    private TargetSession? SessionAt(nint address)
+    {
+        if (LocalActor() is { } local && local.Address == address)
+            return _local;
+        return _others.FirstOrDefault(o => o.Actor?.Address == address);
     }
 
     private void OnDecalPublishCompleted(DecalPublishResult result)
@@ -718,7 +1062,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
         var redraw = _followUp?.OnPublishCompleted(result) ?? DecalFollowUp.RedrawWanted(result, false);
         if (redraw)
         {
-            _redraw.Request();
+            _local.Redraw.Request();
             _log.Information($"Decal publish completed: {result.Published} surface(s) redirected; redraw requested "
                            + $"(policy {_profiles.Config.RedrawPolicy}, unsafe now: {_tracker.Current.RedrawUnsafe}).");
         }
@@ -735,9 +1079,10 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
         // Forget the decal section so the next evaluation, whenever something else triggers it, publishes again. Nothing is
         // triggered here: a persistent failure must not loop, and the apply backoff spaces the retries out.
-        _store.ForgetDecals();
-        _store.DesignHash = null;
-        _retryDue         = _clock.Now + ApplyRetryBackoff;
+        _local.Store.ForgetDecals();
+        _local.Store.DesignHash = null;
+        _local.RetryDue         = _clock.Now + ApplyRetryBackoff;
+        _retryDue               = _local.RetryDue;
     }
 
     private void OnGameObjectRedrawn(nint address, int objectIndex)
@@ -746,7 +1091,7 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
             return;
 
         // Penumbra raises this on the framework thread for every object it redraws (ours or another plugin's).
-        if (LocalPlayerIndex() is { } index && objectIndex == index)
+        if (LocalActor() is { } local && objectIndex == local.Index)
             _followUp.Notice("the player was redrawn");
     }
 
@@ -759,48 +1104,68 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
     private void OnConditionChange(ConditionFlag flag, bool value)
     {
         // The actor still exists here, so Glamourer / Honorific / Moodles can be undone; on Logout it is already gone.
-        if (flag == ConditionFlag.LoggingOut && value && _store.AnythingApplied)
+        if (flag == ConditionFlag.LoggingOut && value && Sessions.Any(s => s.Store.AnythingApplied))
             RunCleanup("logging out", redrawNow: false);
     }
 
     private void OnLogout(int type, int code)
     {
-        if (_store.AnythingApplied)
+        if (Sessions.Any(s => s.Store.AnythingApplied))
             RunCleanup("logout", redrawNow: false);
 
-        _core.ForgetProfile();
-        _redraw.Cancel();
+        foreach (var session in Sessions)
+        {
+            session.ForgetOutcome();
+            session.Redraw.Cancel();
+            session.WasPresent = false;
+        }
+
+        _others.Clear();
+        _sessionsStale = true;
+        _targets.Clear();
         _followUp?.Reset();
-        LastDesign = null;
-        LastReport = null;
     }
 
+    /// <summary> Cleans up every target: the full cleanup where the character is rendered, the identity-based one where it is not. </summary>
     private void RunCleanup(string reason, bool redrawNow)
     {
         _applying = true;
         try
         {
-            _cleanup.Cleanup(reason, redrawNow);
+            foreach (var session in Sessions.ToList())
+            {
+                if (session.Target.IsLocal)
+                {
+                    // Always, even with nothing recorded: the local cleanup also resets the condition timers and gives the collection a clean slate.
+                    session.Cleanup.Cleanup(reason, redrawNow);
+                    continue;
+                }
+
+                if (!session.Store.AnythingApplied)
+                    continue;
+
+                if (session.Refresh(_clock.Now) is not null)
+                    session.Cleanup.Cleanup(reason, redrawNow);
+                else
+                    session.Cleanup.CleanupAbsent(session.Target.Kind == TargetKind.OtherPlayer ? session.Target.Name : null, reason);
+            }
         }
         finally
         {
             _applying = false;
         }
 
-        _core.ForgetProfile();
+        foreach (var session in Sessions)
+            session.ForgetOutcome();
+        _others.RemoveAll(o => o.Retired && !o.Store.AnythingApplied);
         _followUp?.Reset();
-        LastDesign = null;
-        LastReport = null;
     }
 
     // ---- helpers ----------------------------------------------------------------------------------
 
     /// <summary> The object table only answers on the framework thread; off-thread callers see "no player". </summary>
-    private int? LocalPlayerIndex()
-        => _framework.IsInFrameworkUpdateThread && _objects.LocalPlayer is { } player ? player.ObjectIndex : null;
-
-    private nint LocalPlayerAddress()
-        => _framework.IsInFrameworkUpdateThread ? _objects.LocalPlayer?.Address ?? 0 : 0;
+    private ResolvedActor? LocalActor()
+        => _framework.IsInFrameworkUpdateThread && _objects.LocalPlayer is { } player ? new ResolvedActor(player.ObjectIndex, player.Address) : null;
 
     private DrawObjectIdentity? DrawObject()
         => _framework.IsInFrameworkUpdateThread ? _meshes?.DrawObjectState() : null;
@@ -810,12 +1175,12 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
 
     /// <summary> A decal publish can go out: Lamina on, Penumbra there, the collection assigned, a player to draw. </summary>
     private bool DecalsReady()
-        => Enabled && _penumbra.Available && _collectionStatus == CollectionStatus.Assigned && CollectionId is not null && LocalPlayerIndex() is not null;
+        => Enabled && _penumbra.Available && _local.CollectionStatus == CollectionStatus.Assigned && _local.CollectionId is not null && LocalActor() is not null;
 
     private void PublishDecals(IReadOnlyList<DecalSpec> decals)
     {
-        if (_decals is not null && CollectionId is { } collection && LocalPlayerIndex() is { } index)
-            _decals.Publish(collection, index, decals, _store.ModsHash);
+        if (_decals is not null && _local.CollectionId is { } collection && LocalActor() is { } local)
+            _decals.Publish(collection, local.Index, decals, _local.Store.ModsHash);
     }
 
     private static string Flag(string name, bool on)
@@ -828,32 +1193,33 @@ public sealed class LaminaEngine : ILaminaEngine, IDisposable
             return;
 
         _disposed = true;
-        _framework.Update              -= OnFrameworkUpdate;
-        _tracker.SnapshotChanged       -= OnSnapshotChanged;
-        _profiles.Changed              -= OnProfilesChanged;
-        _vitrine.DesignsChanged        -= OnVitrineChanged;
-        _glamourer.AvailabilityChanged -= OnGlamourerAvailability;
-        _penumbra.AvailabilityChanged  -= OnPenumbraAvailability;
-        _honorific.AvailabilityChanged -= Invalidate;
-        _moodles.AvailabilityChanged   -= Invalidate;
+        _framework.Update                  -= OnFrameworkUpdate;
+        _tracker.SnapshotChanged           -= OnSnapshotChanged;
+        _profiles.Changed                  -= OnProfilesChanged;
+        _vitrine.DesignsChanged            -= OnVitrineChanged;
+        _glamourer.AvailabilityChanged     -= OnGlamourerAvailability;
+        _penumbra.AvailabilityChanged      -= OnPenumbraAvailability;
+        _honorific.AvailabilityChanged     -= Invalidate;
+        _moodles.AvailabilityChanged       -= Invalidate;
         _customizePlus.AvailabilityChanged -= OnCustomizePlusAvailability;
         _customizePlus.ProfilesChanged     -= OnCustomizePlusProfilesChanged;
         _heels.AvailabilityChanged         -= OnHeelsAvailability;
         _heels.LocalOffsetChanged          -= OnHeelsLocalOffsetChanged;
-        _glamourer.StateFinalized      -= OnStateFinalized;
+        _glamourer.StateFinalized          -= OnStateFinalized;
         if (_moodles is IMoodlesStatusEvents moodleEvents)
             moodleEvents.StatusManagerModified -= OnMoodlesStatusManagerModified;
-        _clientState.Login             -= OnLogin;
-        _clientState.Logout            -= OnLogout;
-        _condition.ConditionChange     -= OnConditionChange;
+        _clientState.Login                 -= OnLogin;
+        _clientState.Logout                -= OnLogout;
+        _clientState.TerritoryChanged      -= OnTerritoryChanged;
+        _condition.ConditionChange         -= OnConditionChange;
         if (_decals is not null)
             _decals.Completed -= OnDecalPublishCompleted;
-        _penumbra.GameObjectRedrawn    -= OnGameObjectRedrawn;
+        _penumbra.GameObjectRedrawn        -= OnGameObjectRedrawn;
 
         try
         {
-            if (_store.AnythingApplied)
-                _cleanup.Cleanup("plugin unload", redrawNow: true);
+            if (Sessions.Any(s => s.Store.AnythingApplied))
+                RunCleanup("plugin unload", redrawNow: true);
         }
         catch (Exception ex)
         {

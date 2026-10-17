@@ -24,7 +24,7 @@ public sealed class Commands : IDisposable
 
         _services.CommandManager.AddHandler(LaminaCommand, new CommandInfo(OnLamina)
         {
-            HelpMessage = "Open Lamina. Subcommands: on, off, profile <name>, reapply, reroll, redraw, why, help.",
+            HelpMessage = "Open Lamina. Subcommands: on, off, profile <name>, reapply, reroll, redraw, why, targets, help.",
         });
         _services.CommandManager.AddHandler(VitrineCommand, new CommandInfo(OnVitrine)
         {
@@ -74,6 +74,9 @@ public sealed class Commands : IDisposable
                 foreach (var line in _services.Engine.Why().Split('\n'))
                     Print(line.TrimEnd('\r'));
                 break;
+            case "targets":
+                PrintTargets();
+                break;
             case "help":
             default:
                 PrintHelp();
@@ -103,6 +106,33 @@ public sealed class Commands : IDisposable
         Print($"Profile '{profile.Name}' enabled.");
     }
 
+
+    private void PrintTargets()
+    {
+        foreach (var t in _services.Engine.Targets)
+        {
+            var who = t.Target.Kind switch
+            {
+                TargetKind.LocalPlayer => "Your character",
+                TargetKind.OtherPlayer => $"{t.Target.Name}@{_services.Catalog.WorldName(t.Target.WorldId ?? 0)}",
+                _                      => $"{t.Target.Name} (NPC)",
+            };
+            var where = t.Retiring ? "removed, undoing" : t.Shadowed ? "shadowed by your Local Player profile" : t.Present ? $"rendered (#{t.ObjectIndex})" : "not rendered";
+            Print($"{who}: profile {t.ProfileName ?? "(none)"} · {where} · collection {(t.CollectionName is null ? "(none)" : $"\"{t.CollectionName}\"")} {Humanize(t.Collection)}");
+            foreach (var d in t.Dropped)
+                Print($"  · {d}");
+        }
+    }
+
+    private static string Humanize(Lamina.Runtime.CollectionStatus status)
+        => status switch
+        {
+            Lamina.Runtime.CollectionStatus.Assigned        => "assigned",
+            Lamina.Runtime.CollectionStatus.NotAssigned     => "not assigned to the character (mods written, not shown on them)",
+            Lamina.Runtime.CollectionStatus.NotFound        => "not found",
+            Lamina.Runtime.CollectionStatus.NotConfigured   => "none chosen (mods skipped)",
+            _                                               => "Penumbra missing",
+        };
     private void PrintHelp()
     {
         Print("/lam — open the Lamina window");
@@ -112,6 +142,7 @@ public sealed class Commands : IDisposable
         Print("/lam reroll — pick the random layers of every pass again");
         Print("/lam redraw — redraw the character now");
         Print("/lam why — explain the current design");
+        Print("/lam targets — list every target Lamina drives and where it stands");
         Print("/vit — open Vitrine (separate plugin, optional)");
     }
 

@@ -86,6 +86,7 @@ public sealed class FakeGlamourerBridge : IGlamourerBridge
     public void RaiseAvailability() => AvailabilityChanged?.Invoke();
     public void RaiseFinalized(nint a, StateFinalizationType t) => StateFinalized?.Invoke(a, t);
     public GlamourerApiEc UnlockAndRevertToGame(int objectIndex) => GlamourerApiEc.Success;
+    public GlamourerApiEc UnlockAndRevertByName(string playerName, bool toAutomation) => GlamourerApiEc.Success;
 
 
     /// <summary> Designs created through <see cref="AddDesign"/>: id → (name, the design JObject as sent). </summary>

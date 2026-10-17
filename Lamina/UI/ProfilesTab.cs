@@ -19,7 +19,7 @@ public sealed partial class LaminaWindow
 
     private void DrawProfilesTab()
     {
-        Widgets.Paragraph("A profile is a complete Lamina setup. Only one profile can be active per target; enabling one disables the others for the same target. First build: the only target is your own character.");
+        Widgets.Paragraph("A profile is a complete Lamina setup. Only one profile can be active per target; enabling one disables the others for the same target. A profile can follow your own character, another player or a humanoid NPC near you: pick its targets with the crosshair button.");
         ImGui.Spacing();
 
         ImGui.SetNextItemWidth(260 * Widgets.Scale);
@@ -43,7 +43,8 @@ public sealed partial class LaminaWindow
 
         ImGui.Separator();
         var local = Target.LocalPlayer();
-        var active = _s.Profiles.ActiveProfileFor(local);
+        var active   = _s.Profiles.ActiveProfileFor(local);
+        var statuses = _s.Engine.Targets;
         Guid? toDelete    = null;
         Guid? toDuplicate = null;
 
@@ -87,10 +88,10 @@ public sealed partial class LaminaWindow
             }
             else
             {
-                if (ReferenceEquals(p, active))
+                if (ReferenceEquals(p, active) || (p.Enabled && statuses.Any(s => s.Present && !s.Shadowed && !s.Retiring && p.Targets.Contains(s.Target))))
                 {
                     ImGui.TextColored(Widgets.Good, "●");
-                    Widgets.Tooltip("Applied to the local player right now");
+                    Widgets.Tooltip("Applied to a rendered target right now");
                     ImGui.SameLine();
                 }
                 if (ImGui.Selectable(p.Name, _editProfileId == p.Id, ImGuiSelectableFlags.AllowDoubleClick))
@@ -106,7 +107,7 @@ public sealed partial class LaminaWindow
             }
 
             ImGui.TableNextColumn();
-            ImGui.TextUnformatted(string.Join(", ", p.Targets.Select(t => t.ToString())));
+            DrawTargetsCell(p, statuses);
 
             ImGui.TableNextColumn();
             var passes = p.PassGroups.Sum(g => g.Passes.Count);

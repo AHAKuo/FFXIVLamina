@@ -40,6 +40,10 @@ public static class Migrations
         // Profile v3 → v4: passes gained the "randomLayers" list (one of them is picked at random). Older files simply have
         // none, so nothing is rewritten; the bump tells older builds, which would drop the list on save, that the file is newer.
         new(FileKind.Profile, 3, _ => { }),
+        // Profile v4 → v5: targets gained "dataId" and "collectionName", and the Character kind now means a humanoid NPC (name + data id)
+        // rather than a named player. Older files only ever carried the local player target, so nothing is rewritten; the bump tells older
+        // builds, which would drop the new fields on save, that the file is newer.
+        new(FileKind.Profile, 4, _ => { }),
     };
 
     /// <summary> Profile v2 → v3: reorders "passGroups" so final groups follow normal ones sorted by their old priority, then removes "priority". </summary>

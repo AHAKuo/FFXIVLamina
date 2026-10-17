@@ -10,10 +10,16 @@ public enum CollectionStatus
     PenumbraMissing,
     /// <summary> No collection with the configured name exists; the user must create it in Penumbra. </summary>
     NotFound,
-    /// <summary> Collection exists but the player has not assigned themselves to it in Penumbra: mods are skipped (opt out). Lamina never assigns on its own. </summary>
+    /// <summary>
+    /// Collection exists but the character is not assigned to it in Penumbra. For your own character that is the opt-out: mods are
+    /// skipped. For another target the mods are still written into the collection; they only show once the character is assigned.
+    /// Lamina never assigns on its own.
+    /// </summary>
     NotAssigned,
-    /// <summary> Collection exists and is the player's effective collection; mods will be applied. </summary>
+    /// <summary> Collection exists and is the character's effective collection; mods apply. </summary>
     Assigned,
+    /// <summary> No collection name anywhere (Settings empty and none on the target): mods (and decals) are skipped. </summary>
+    NotConfigured,
 }
 
 /// <summary> Outcome of the last apply, for the Settings / debug overlay. </summary>
@@ -74,6 +80,35 @@ public interface ILaminaEngine
     /// <summary> Human readable explanation of the current state (/lam why). </summary>
     string Why();
 
+    /// <summary> Every target Lamina currently drives (the local player first), with where each one stands. </summary>
+    IReadOnlyList<TargetStatus> Targets { get; }
+
+    /// <summary> Targetable characters rendered near you right now (players and humanoid NPCs, nearest first), for the target picker. </summary>
+    IReadOnlyList<Lamina.Runtime.State.TargetCandidate> NearbyCandidates();
+
     /// <summary> Raised on the framework thread after every apply attempt. </summary>
     event Action? Applied;
 }
+
+/// <summary> Where one target stands right now, for the UI and /lam why. </summary>
+/// <param name="Target"> The target. </param>
+/// <param name="Present"> The character is rendered (the local player: logged in). </param>
+/// <param name="ObjectIndex"> Its object table index while present. </param>
+/// <param name="ProfileName"> Name of the enabled profile for this target, or null. </param>
+/// <param name="Collection"> Collection status for the target's mods. </param>
+/// <param name="CollectionName"> The collection the target's mods go into (settings collection for the local player). </param>
+/// <param name="Dropped"> Sections the design carried that this target cannot take, with reasons. </param>
+/// <param name="LastApply"> Last apply outcome on this target. </param>
+/// <param name="Shadowed"> A named player target that is you while a Local Player profile is active; it yields. </param>
+/// <param name="Retiring"> No profile targets it any more; Lamina is still undoing what it applied. </param>
+public sealed record TargetStatus(
+    Target Target,
+    bool Present,
+    int? ObjectIndex,
+    string? ProfileName,
+    CollectionStatus Collection,
+    string? CollectionName,
+    IReadOnlyList<string> Dropped,
+    ApplyInfo? LastApply,
+    bool Shadowed,
+    bool Retiring);

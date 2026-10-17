@@ -28,10 +28,14 @@ public enum NoRuleFallback
     Automation,
 }
 
+/// <summary> What kind of character a <see cref="Target"/> names. </summary>
 public enum TargetKind
 {
+    /// <summary> Whoever you are logged in as. Receives every section. </summary>
     LocalPlayer,
+    /// <summary> A humanoid non-player character (event NPC, retainer, humanoid battle NPC) by name and data id. Glamourer, Customize+ and mods only. </summary>
     Character,
+    /// <summary> Another player by name and home world. Everything but decals, which are baked onto your own body meshes. </summary>
     OtherPlayer,
 }
 

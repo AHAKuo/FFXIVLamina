@@ -28,6 +28,7 @@ public sealed class CustomizePlusBridge : BridgeBase, ICustomizePlusBridge
     private const string GetByUniqueIdLabel   = Prefix + ".Profile.GetByUniqueId";
     private const string SetTemporaryLabel    = Prefix + ".Profile.SetTemporaryProfileOnCharacter";
     private const string DeleteTemporaryLabel = Prefix + ".Profile.DeleteTemporaryProfileOnCharacter";
+    private const string DeleteByIdLabel      = Prefix + ".Profile.DeleteTemporaryProfileByUniqueId";
     private const string OnUpdateLabel        = Prefix + ".Profile.OnUpdate";
 
     private readonly ICallGateSubscriber<(int, int)>                                                                     _apiVersion;
@@ -36,6 +37,7 @@ public sealed class CustomizePlusBridge : BridgeBase, ICustomizePlusBridge
     private readonly ICallGateSubscriber<Guid, (int, string?)>                                                           _getByUniqueId;
     private readonly ICallGateSubscriber<ushort, string, (int, Guid?)>                                                   _setTemporary;
     private readonly ICallGateSubscriber<ushort, int>                                                                    _deleteTemporary;
+    private readonly ICallGateSubscriber<Guid, int>                                                                      _deleteById;
     private readonly ICallGateSubscriber<ushort, Guid, object>                                                           _onUpdate;
 
     /// <param name="pi"> The Dalamud plugin interface. </param>
@@ -50,6 +52,7 @@ public sealed class CustomizePlusBridge : BridgeBase, ICustomizePlusBridge
         _getByUniqueId   = pi.GetIpcSubscriber<Guid, (int, string?)>(GetByUniqueIdLabel);
         _setTemporary    = pi.GetIpcSubscriber<ushort, string, (int, Guid?)>(SetTemporaryLabel);
         _deleteTemporary = pi.GetIpcSubscriber<ushort, int>(DeleteTemporaryLabel);
+        _deleteById      = pi.GetIpcSubscriber<Guid, int>(DeleteByIdLabel);
         _onUpdate        = pi.GetIpcSubscriber<ushort, Guid, object>(OnUpdateLabel);
 
         _onUpdate.Subscribe(OnProfileUpdate);
@@ -124,6 +127,15 @@ public sealed class CustomizePlusBridge : BridgeBase, ICustomizePlusBridge
             return CustomizePlusEc.InvalidCharacter;
 
         return Call(() => (CustomizePlusEc)_deleteTemporary.InvokeFunc((ushort)objectIndex), CustomizePlusEc.UnknownError, "Profile.DeleteTemporaryProfileOnCharacter");
+    }
+
+    /// <inheritdoc/>
+    public CustomizePlusEc DeleteTemporaryProfileById(Guid temporaryId)
+    {
+        if (temporaryId == Guid.Empty)
+            return CustomizePlusEc.ProfileNotFound;
+
+        return Call(() => (CustomizePlusEc)_deleteById.InvokeFunc(temporaryId), CustomizePlusEc.UnknownError, "Profile.DeleteTemporaryProfileByUniqueId");
     }
 
     /// <summary> Parses an <c>IPCCharacterProfile</c> JSON into bones. Members Customize+ omitted (default values) read as zero / false. </summary>

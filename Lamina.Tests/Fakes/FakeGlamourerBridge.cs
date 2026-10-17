@@ -111,6 +111,19 @@ public sealed class FakeGlamourerBridge : FakeBridgeBase, IGlamourerBridge, IGla
     public void RaiseStateFinalized(nint address, StateFinalizationType type)
         => StateFinalized?.Invoke(address, type);
 
+    /// <summary> Player names reverted through <see cref="UnlockAndRevertByName"/>, with the fallback asked for. </summary>
+    public List<(string Name, bool ToAutomation)> RevertedByName { get; } = new();
+
+    public GlamourerApiEc UnlockAndRevertByName(string playerName, bool toAutomation)
+    {
+        Record(nameof(UnlockAndRevertByName), playerName, toAutomation);
+        if (!Available)
+            return GlamourerApiEc.UnknownError;
+
+        RevertedByName.Add((playerName, toAutomation));
+        return RevertResult;
+    }
+
     /// <summary> Result returned by <see cref="UnlockAndRevertToGame"/>. </summary>
     public GlamourerApiEc RevertToGameResult { get; set; } = GlamourerApiEc.Success;
 

@@ -63,6 +63,12 @@ public interface IGlamourerBridge : IPluginBridge
     GlamourerApiEc UnlockAndRevertToGame(int objectIndex);
 
     /// <summary>
+    /// Unlocks and reverts the state Glamourer holds for players of this name, whether or not they are rendered right now (Glamourer
+    /// keeps player states by identity). The fallback is the game state or automation like the index-based calls. Players only.
+    /// </summary>
+    GlamourerApiEc UnlockAndRevertByName(string playerName, bool toAutomation);
+
+    /// <summary>
     /// Creates a design inside Glamourer from a design JObject (FileVersion 3 layout, see <c>GlamourerDesignWriter</c>) and
     /// writes it to disk. Returns the result code (CouldNotParse when Glamourer rejects the JSON) and the new design's id
     /// (Guid.Empty on failure).
@@ -85,6 +91,9 @@ public interface IPenumbraBridge : IPluginBridge
 
     /// <summary> Clean slate: removes every temporary setting Lamina wrote into the collection, in one call. </summary>
     PenumbraApiEc RemoveAllTemporaryModSettings(Guid collectionId);
+
+    /// <summary> Removes the temporary setting Lamina wrote for one mod in a collection; <see cref="PenumbraApiEc.NothingChanged"/> when there is none. </summary>
+    PenumbraApiEc RemoveTemporaryModSettings(Guid collectionId, string modDirectory);
 
     void RedrawObject(int objectIndex);
 
@@ -166,6 +175,9 @@ public interface ICustomizePlusBridge : IPluginBridge
 
     /// <summary> Removes the actor's temporary profile. ProfileNotFound when there is none. </summary>
     CustomizePlusEc DeleteTemporaryProfile(int objectIndex);
+
+    /// <summary> Removes a temporary profile by the id <see cref="SetTemporaryProfile"/> returned, which also works while the actor is not rendered. ProfileNotFound when it is already gone. </summary>
+    CustomizePlusEc DeleteTemporaryProfileById(Guid temporaryId);
 
     /// <summary> Raised on the framework thread when Customize+ reports a change to the profile active on an actor (saved profiles only). </summary>
     event Action? ProfilesChanged;

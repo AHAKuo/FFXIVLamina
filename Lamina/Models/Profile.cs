@@ -3,8 +3,8 @@ namespace Lamina.Models;
 /// <summary> A complete Lamina setup: pass groups, passes, layers, ending with its targets. Saved to profiles/&lt;Id&gt;.json. </summary>
 public sealed class Profile
 {
-    /// <summary> 2 since the Penumbra Adjust "applies" semantics and the Equipment / Appearance layers, 4 since the random layers of a pass (see Migrations). </summary>
-    public const int CurrentVersion = 4;
+    /// <summary> 2 since the Penumbra Adjust "applies" semantics and the Equipment / Appearance layers, 4 since the random layers of a pass, 5 since targets other than the local player (see Migrations). </summary>
+    public const int CurrentVersion = 5;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -21,35 +21,66 @@ public sealed class Profile
     public List<Target> Targets { get; set; } = new() { Target.LocalPlayer() };
 }
 
+/// <summary>
+/// Who a profile applies to. The local player is one target; a profile can also follow another player (name + home world)
+/// or a humanoid non-player character (name + data id) while that character is rendered near you. Equality is identity
+/// only: <see cref="CollectionName"/> is a setting of the target, not part of who it is.
+/// </summary>
 public sealed class Target : IEquatable<Target>
 {
     public TargetKind Kind { get; set; } = TargetKind.LocalPlayer;
 
-    /// <summary> Only when Kind is Character / OtherPlayer. </summary>
+    /// <summary> The character's name. Null for the local player. </summary>
     public string? Name { get; set; }
 
-    /// <summary> Only when Kind is Character / OtherPlayer. </summary>
+    /// <summary> Home world id of an <see cref="TargetKind.OtherPlayer"/>. Null otherwise. </summary>
     public uint? WorldId { get; set; }
+
+    /// <summary> Data id (ENpcBase / BNpcBase row) of a <see cref="TargetKind.Character"/>, which tells apart NPCs sharing a name. Null when unknown. </summary>
+    public uint? DataId { get; set; }
+
+    /// <summary>
+    /// Penumbra collection Lamina may write mod states into for this character, by name. The player creates it in Penumbra and
+    /// assigns the character to it (Individual Assignments); Lamina only writes temporary settings there. Null = no mods for
+    /// this target. Ignored for the local player, who uses the collection from the settings.
+    /// </summary>
+    public string? CollectionName { get; set; }
+
+    /// <summary> True for the local player target. </summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public bool IsLocal
+        => Kind == TargetKind.LocalPlayer;
 
     public static Target LocalPlayer()
         => new() { Kind = TargetKind.LocalPlayer };
 
+    /// <summary> Another player, by name and home world. </summary>
+    public static Target Player(string name, uint worldId)
+        => new() { Kind = TargetKind.OtherPlayer, Name = name, WorldId = worldId };
+
+    /// <summary> A humanoid non-player character, by name and data id. </summary>
+    public static Target Npc(string name, uint? dataId)
+        => new() { Kind = TargetKind.Character, Name = name, DataId = dataId };
+
     public bool Equals(Target? other)
         => other is not null && Kind == other.Kind
          && string.Equals(Name, other.Name, StringComparison.OrdinalIgnoreCase)
-         && WorldId == other.WorldId;
+         && WorldId == other.WorldId
+         && DataId == other.DataId;
 
     public override bool Equals(object? obj)
         => Equals(obj as Target);
 
     public override int GetHashCode()
-        => HashCode.Combine(Kind, Name?.ToLowerInvariant(), WorldId);
+        => HashCode.Combine(Kind, Name?.ToLowerInvariant(), WorldId, DataId);
 
+    /// <summary> Short label without world names (the UI resolves the world through the catalog). </summary>
     public override string ToString()
         => Kind switch
         {
             TargetKind.LocalPlayer => "Local Player",
-            _                      => $"{Name}@{WorldId}",
+            TargetKind.Character   => $"{Name} (NPC)",
+            _                      => WorldId is { } w ? $"{Name}@{w}" : Name ?? "?",
         };
 }
 

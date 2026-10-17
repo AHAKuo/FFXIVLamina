@@ -30,6 +30,7 @@ public sealed class Applier
     private readonly Func<LaminaConfig> _config;
     private readonly Func<Guid?> _collectionId;
     private readonly Func<CollectionStatus> _collectionStatus;
+    private readonly bool _writeModsWhenUnassigned;
     private readonly Func<int?> _localPlayerIndex;
     private readonly Func<nint> _localPlayerAddress;
     private readonly Func<DateTime> _clock;
@@ -52,13 +53,15 @@ public sealed class Applier
     /// <param name="localPlayerAddress"> Actor address of the local player (0 when none), for Moodles. </param>
     /// <param name="clock"> UTC clock. </param>
     /// <param name="log"> Optional debug logger. </param>
+    /// <param name="writeModsWhenUnassigned"> Write mods into the collection even while the character is not assigned to it (other targets: the settings land in the collection either way and show once the character is assigned). The local player opts out by unassigning instead. </param>
     /// <param name="drawObjectKey"> Identity of the player's draw object right now (<see cref="ISkinMeshProvider.DrawObjectState"/>), recorded with an immediate decal publish. </param>
     public Applier(IGlamourerBridge glamourer, IPenumbraBridge penumbra, IHonorificBridge honorific, IMoodlesBridge moodles,
         ICustomizePlusBridge customizePlus, ISimpleHeelsBridge heels,
         IDecalPublisher? decals, AppliedStateStore store, RedrawScheduler redraw, Func<LaminaConfig> config, Func<Guid?> collectionId,
         Func<CollectionStatus> collectionStatus, Func<int?> localPlayerIndex, Func<nint> localPlayerAddress,
-        Func<DateTime>? clock = null, Action<string>? log = null, Func<string?>? drawObjectKey = null)
+        Func<DateTime>? clock = null, Action<string>? log = null, Func<string?>? drawObjectKey = null, bool writeModsWhenUnassigned = false)
     {
+        _writeModsWhenUnassigned = writeModsWhenUnassigned;
         _glamourer          = glamourer;
         _penumbra           = penumbra;
         _honorific          = honorific;
@@ -108,14 +111,23 @@ public sealed class Applier
         if (delta.ModsChanged)
         {
             var status = _collectionStatus();
-            if (status == CollectionStatus.Assigned && _collectionId() is { } collection && _penumbra.Available)
+            if (ModsWritable(status) && _collectionId() is { } collection && _penumbra.Available)
             {
                 var hadMods = _store.ModsApplied;
-                var clear   = _penumbra.RemoveAllTemporaryModSettings(collection);
-                if (clear is not PenumbraApiEc.Success and not PenumbraApiEc.NothingChanged)
+
+                // Mods this target wrote before and no longer sets go first. Only those: the collection may carry another
+                // target's settings (several targets can share one collection), which a clean slate would take with them.
+                var stale = _store.ModDirectories.Where(d => !design.Mods.ContainsKey(d)).ToList();
+                foreach (var dir in stale)
                 {
-                    problems.Add($"Penumbra clean slate failed: {clear}");
-                    complete = false;
+                    var code = _penumbra.RemoveTemporaryModSettings(collection, dir);
+                    if (code is PenumbraApiEc.Success or PenumbraApiEc.NothingChanged or PenumbraApiEc.ModMissing)
+                        _store.ModDirectories.Remove(dir);
+                    else
+                    {
+                        problems.Add($"Penumbra kept {dir}: {code}");
+                        complete = false;
+                    }
                 }
 
                 foreach (var (dir, contribution) in design.Mods)
@@ -126,6 +138,7 @@ public sealed class Applier
                     {
                         case PenumbraApiEc.Success:
                             modsWritten++;
+                            _store.ModDirectories.Add(dir);
                             break;
                         case PenumbraApiEc.ModMissing:
                             // Not transient: the mod is not installed. Reported, not retried.
@@ -135,6 +148,7 @@ public sealed class Applier
                         case PenumbraApiEc.OptionMissing:
                             problems.Add($"option missing in {dir}: {code}");
                             modsWritten++;
+                            _store.ModDirectories.Add(dir);
                             break;
                         default:
                             problems.Add($"Penumbra refused {dir}: {code}");
@@ -151,8 +165,7 @@ public sealed class Applier
             else
             {
                 _log?.Invoke($"Mods skipped: collection status {status}.");
-                _store.ModsHash    = null;
-                _store.ModsWritten = 0;
+                _store.ForgetMods();
             }
         }
 
@@ -474,6 +487,9 @@ public sealed class Applier
     /// (temporary ones ignored, so another plugin's preview is never baked in). A mod not configured there inherits
     /// "disabled, priority 0, Penumbra's default options" — which is what omitting the groups gives.
     /// </summary>
+    private bool ModsWritable(CollectionStatus status)
+        => status == CollectionStatus.Assigned || (status == CollectionStatus.NotAssigned && _writeModsWhenUnassigned);
+
     private (bool Enabled, int Priority, IReadOnlyDictionary<string, IReadOnlyList<string>> Settings) ResolveModValues(
         Guid collection, string dir, ModContribution c)
     {

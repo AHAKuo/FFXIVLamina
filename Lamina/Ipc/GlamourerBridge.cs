@@ -155,6 +155,37 @@ public sealed class GlamourerBridge : BridgeBase, IGlamourerBridge, IGlamourerUn
         => Dispatch(() => StateFinalized?.Invoke(address, type), nameof(StateFinalized));
 
     private readonly RevertState _revertState;
+    private UnlockStateName? _unlockStateName;
+    private RevertStateName? _revertStateName;
+    private RevertToAutomationName? _revertToAutomationName;
+
+    /// <inheritdoc/>
+    /// <remarks> Glamourer matches player states by name only (no world), so every player of that name with a Lamina-locked state is reverted. </remarks>
+    public GlamourerApiEc UnlockAndRevertByName(string playerName, bool toAutomation)
+    {
+        if (string.IsNullOrWhiteSpace(playerName))
+            return GlamourerApiEc.ActorNotFound;
+
+        var unlock = Call(() =>
+        {
+            _unlockStateName ??= new UnlockStateName(PluginInterface);
+            return _unlockStateName.Invoke(playerName, IpcConstants.GlamourerKey);
+        }, GlamourerApiEc.UnknownError, nameof(UnlockStateName));
+        if (unlock is not GlamourerApiEc.Success and not GlamourerApiEc.NothingDone)
+            Log.Debug($"[Glamourer] UnlockStateName({playerName}) returned {unlock}; attempting revert anyway.");
+
+        return toAutomation
+            ? Call(() =>
+            {
+                _revertToAutomationName ??= new RevertToAutomationName(PluginInterface);
+                return _revertToAutomationName.Invoke(playerName, 0, ApplyFlagEx.RevertDefault);
+            }, GlamourerApiEc.UnknownError, nameof(RevertToAutomationName))
+            : Call(() =>
+            {
+                _revertStateName ??= new RevertStateName(PluginInterface);
+                return _revertStateName.Invoke(playerName, 0, ApplyFlagEx.RevertDefault);
+            }, GlamourerApiEc.UnknownError, nameof(RevertStateName));
+    }
 
     /// <inheritdoc/>
     /// <remarks> Same shape as <see cref="UnlockAndRevertToAutomation"/>, but the revert target is the game's own state, not automation. </remarks>

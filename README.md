@@ -31,6 +31,15 @@ A profile is a complete Lamina setup. Keep one per character (or per mood) and t
 
 (1) Create a profile or import one from the clipboard. (2) The On column: tick a profile to make it the active one, the dot marks which one is live. (3) Per-profile actions: edit, rename, duplicate, export to clipboard, delete.
 
+### Targets: your character, another player, or an NPC
+By default a profile applies to your own character. The crosshair button in the Targets column opens the target picker, where a profile can also follow another player (by name and home world) or a humanoid NPC rendered near you. Only characters that can actually take on a look are offered: players and NPCs with a human model. Minions, mounts, monsters and objects never appear in the list.
+
+Each target receives only what applies to it. Another player gets Glamourer, Penumbra mods, Honorific, Moodles, Customize+ and Simple Heels, but no decals, since those are baked onto your own body. An NPC gets Glamourer, Customize+ and mods. Whatever a target cannot take is listed next to it and in `/lam targets`, never reported as a failure.
+
+Mods for another character are written into Lamina's own collection (the one from Settings) by default, so a Penumbra Adjust layer in that profile enables its mods there just like one of yours would. To see them on the character, assign it to that collection in Penumbra under Individual Assignments; Lamina never assigns collections itself, and until you do the settings sit in the collection without showing on them. You can also name a different collection on the target. Profiles can share a collection because each one only removes the mods it wrote; if two profiles set the same mod differently, the one applied last wins. In the pass editor, layers that none of a profile's targets can take (an Honorific layer in an NPC-only profile, say) are greyed out and cannot be added.
+
+The profile applies while the character is rendered and re-asserts itself when they come back into view. Switch the profile off while they are away and Lamina still takes back what it can by identity (the Glamourer state and the Customize+ profile); the rest is undone the next time the character appears. Conditions are always evaluated against your own state; the target just receives the result.
+
 ### Pass groups and passes
 Inside a profile, looks are organized into **pass groups** and **passes**. Groups are checked top to bottom and the first group whose conditions match wins. Inside a group every matching pass contributes its layers, and lower passes override higher ones. A group marked **Final Pass** sits in its own section below and is layered on top of whichever group won, so "take the helmet off while sitting" works no matter which look is active.
 

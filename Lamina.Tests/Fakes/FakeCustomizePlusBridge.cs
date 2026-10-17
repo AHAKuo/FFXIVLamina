@@ -68,6 +68,15 @@ public sealed class FakeCustomizePlusBridge : FakeBridgeBase, ICustomizePlusBrid
         return Temporary.Remove(objectIndex) ? CustomizePlusEc.Success : CustomizePlusEc.ProfileNotFound;
     }
 
+    public CustomizePlusEc DeleteTemporaryProfileById(Guid temporaryId)
+    {
+        Record(nameof(DeleteTemporaryProfileById), temporaryId);
+        if (!Available)
+            return CustomizePlusEc.UnknownError;
+        var index = Temporary.Where(kv => kv.Value.Id == temporaryId).Select(kv => (int?)kv.Key).FirstOrDefault();
+        return index is { } i && Temporary.Remove(i) ? CustomizePlusEc.Success : CustomizePlusEc.ProfileNotFound;
+    }
+
     /// <summary> Simulates Customize+ reporting a profile change. </summary>
     public void RaiseProfilesChanged()
         => ProfilesChanged?.Invoke();

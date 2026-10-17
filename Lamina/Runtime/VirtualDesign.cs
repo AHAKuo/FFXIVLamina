@@ -238,6 +238,42 @@ public sealed class DesignDraft
         return result;
     }
 
+    /// <summary> A draft carrying every field of a frozen design, so a design can be trimmed and frozen again. </summary>
+    public static DesignDraft CopyOf(VirtualDesign design)
+    {
+        var d = new DesignDraft();
+        foreach (var (k, v) in design.Items) d.Items[k] = v;
+        foreach (var (k, v) in design.Stains) d.Stains[k] = v;
+        foreach (var (k, v) in design.Crests) d.Crests[k] = v;
+        foreach (var (k, v) in design.Bonus) d.Bonus[k] = v;
+        foreach (var (k, v) in design.Customize) d.Customize[k] = v;
+        d.ModelId = design.ModelId;
+        foreach (var (k, v) in design.Meta) d.Meta[k] = v;
+        foreach (var (k, v) in design.Parameters) d.Parameters[k] = v;
+        foreach (var (k, v) in design.Materials) d.Materials[k] = v;
+        foreach (var (_, v) in design.Mods) d.AddMod(v);
+        d.Honorific = design.Honorific;
+        foreach (var (k, v) in design.Moodles) d.Moodles[k] = v;
+        d.Decals.AddRange(design.Decals);
+        foreach (var (k, v) in design.CustomizePlusBones) d.CustomizePlusBones[k] = v;
+        d.SimpleHeels = design.SimpleHeels;
+        return d;
+    }
+
+    /// <summary> Drops every Glamourer field (items, stains, crests, bonus, customize, model, meta, parameters, materials). </summary>
+    public void ClearGlamourer()
+    {
+        Items.Clear();
+        Stains.Clear();
+        Crests.Clear();
+        Bonus.Clear();
+        Customize.Clear();
+        ModelId = null;
+        Meta.Clear();
+        Parameters.Clear();
+        Materials.Clear();
+    }
+
     /// <summary> Freezes the draft into an immutable VirtualDesign. </summary>
     public VirtualDesign Freeze(Guid profileId, Guid? activeGroupId, IReadOnlyList<Guid> activeFinalGroupIds, IReadOnlyList<Guid> matchedPassIds)
         => new(this, profileId, activeGroupId, activeFinalGroupIds, matchedPassIds);
