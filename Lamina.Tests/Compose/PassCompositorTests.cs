@@ -396,6 +396,164 @@ public class PassCompositorTests
         Assert.False(preview.FocusMatches);
     }
 
+    // ---- random section ---------------------------------------------------------------------------
+
+    /// <summary> A pass with one ordered layer (head 1) and a random section of head 11 / head 12 / disabled head 13, each with its own hairstyle. </summary>
+    private static (Profile Profile, Pass Pass, GlamourerLayer[] Random) RandomSetup(FakeGlamourerBridge bridge, bool matches = true)
+    {
+        var random = new[]
+        {
+            Design(bridge, "R1", 11, hair: 1),
+            Design(bridge, "R2", 12, hair: 2),
+            Design(bridge, "R3", 13, hair: 3),
+        };
+        random[2].Enabled = false;
+        var pass = Build.Pass("idle", matches, Design(bridge, "A", 1));
+        pass.RandomLayers.AddRange(random);
+        var profile = new Profile { PassGroups = { Build.Group("G", true, pass) } };
+        return (profile, pass, random);
+    }
+
+    [Fact]
+    public void RandomSection_ContributesOneEnabledLayer_AfterTheOrderedLayers_AndKeepsItsPick()
+    {
+        var bridge = new FakeGlamourerBridge();
+        var (profile, pass, random) = RandomSetup(bridge);
+        var roll       = 1;                                                       // index among the enabled candidates
+        var picks      = new RandomLayerPicks(max => Math.Min(roll, max - 1));
+        var compositor = new PassCompositor(picks);
+
+        var (design, _) = compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+
+        Assert.Equal(12ul, design.Items[EquipSlot.Head].Value.ItemId);            // the pick merges after the ordered layers and wins
+        Assert.Equal(2, design.Customize[CustomizeIndex.Hairstyle].Value);
+        Assert.Equal(random[1].Id, design.Items[EquipSlot.Head].Source.LayerId);
+        Assert.Contains("(random pick)", design.Items[EquipSlot.Head].Source.Note);
+        Assert.Equal(random[1].Id, picks.Current(pass.Id));
+
+        // The pass keeps contributing: a new roll would give another layer, but the pick is kept.
+        roll = 0;
+        var (again, _) = compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        Assert.Equal(12ul, again.Items[EquipSlot.Head].Value.ItemId);
+        Assert.Equal(design.ContentHash, again.ContentHash);
+
+        // Bottom to top the ordered layers merge after the pick and override it; the pick's other fields pass through.
+        var (bottomUp, _) = compositor.Compose(profile, Snap, _eval, EvaluationDirection.BottomToTop, Build.Resolver(bridge));
+        Assert.Equal(1ul, bottomUp.Items[EquipSlot.Head].Value.ItemId);
+        Assert.Equal(2, bottomUp.Customize[CustomizeIndex.Hairstyle].Value);
+    }
+
+    [Fact]
+    public void RandomSection_NeverPicksDisabledLayers_AndRollsOverTheEnabledOnesOnly()
+    {
+        var bridge = new FakeGlamourerBridge();
+        var (profile, pass, random) = RandomSetup(bridge);
+        var seen = new HashSet<Guid>();
+        for (var roll = 0; roll < 5; roll++)
+        {
+            var r          = roll;
+            var picks      = new RandomLayerPicks(max => r % max);
+            var compositor = new PassCompositor(picks);
+            compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+            seen.Add(picks.Current(pass.Id)!.Value);
+        }
+
+        Assert.Equal(new HashSet<Guid> { random[0].Id, random[1].Id }, seen);
+    }
+
+    [Fact]
+    public void RandomPick_IsForgottenWhenThePassStopsContributing_AndRolledAgainWhenItReturns()
+    {
+        var bridge = new FakeGlamourerBridge();
+        var (profile, pass, random) = RandomSetup(bridge);
+        var roll       = 1;
+        var picks      = new RandomLayerPicks(max => Math.Min(roll, max - 1));
+        var compositor = new PassCompositor(picks);
+        compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        Assert.Equal(random[1].Id, picks.Current(pass.Id));
+
+        pass.Conditions = new ConditionStack { Root = new FixedCondition(false) };
+        var (off, _) = compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        Assert.True(off.IsEmpty);
+        Assert.Null(picks.Current(pass.Id));
+
+        roll            = 0;
+        pass.Conditions = new ConditionStack { Root = new FixedCondition(true) };
+        var (back, _) = compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        Assert.Equal(11ul, back.Items[EquipSlot.Head].Value.ItemId);
+        Assert.Equal(random[0].Id, picks.Current(pass.Id));
+    }
+
+    [Fact]
+    public void RandomPick_FallsBackWhenThePickedLayerIsDisabledOrRemoved_AndRerollForgetsIt()
+    {
+        var bridge = new FakeGlamourerBridge();
+        var (profile, pass, random) = RandomSetup(bridge);
+        var roll       = 1;
+        var picks      = new RandomLayerPicks(max => Math.Min(roll, max - 1));
+        var compositor = new PassCompositor(picks);
+        compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        Assert.Equal(random[1].Id, picks.Current(pass.Id));
+
+        // The picked layer is disabled: the next composition rolls among what is left (R1 only).
+        random[1].Enabled = false;
+        var (fallback, _) = compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        Assert.Equal(11ul, fallback.Items[EquipSlot.Head].Value.ItemId);
+        Assert.Equal(random[0].Id, picks.Current(pass.Id));
+
+        // Nothing enabled: the section contributes nothing and the pick is dropped.
+        random[0].Enabled = false;
+        var (none, _) = compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        Assert.Equal(1ul, none.Items[EquipSlot.Head].Value.ItemId);
+        Assert.Null(picks.Current(pass.Id));
+
+        // Reroll: the next composition rolls fresh (R2 enabled again, roll → R2).
+        random[0].Enabled = true;
+        random[1].Enabled = true;
+        compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        roll = 0;
+        var kept = compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        Assert.Equal(12ul, kept.Design.Items[EquipSlot.Head].Value.ItemId);
+        picks.Reroll(pass.Id);
+        var (rerolled, _) = compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        Assert.Equal(11ul, rerolled.Items[EquipSlot.Head].Value.ItemId);
+    }
+
+    [Fact]
+    public void Preview_DoesNotRoll_ShowsTheFirstEnabledLayerUntilThen_AndTheCommittedPickAfter()
+    {
+        var bridge = new FakeGlamourerBridge();
+        var (profile, pass, random) = RandomSetup(bridge);
+        var picks      = new RandomLayerPicks(max => max - 1);
+        var compositor = new PassCompositor(picks);
+
+        var preview = compositor.Preview(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge), null, pass.Id);
+        Assert.Equal(11ul, preview.Full.Items[EquipSlot.Head].Value.ItemId);
+        Assert.Equal(11ul, preview.Focus!.Items[EquipSlot.Head].Value.ItemId);
+        Assert.Null(picks.Current(pass.Id));
+
+        compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+        Assert.Equal(random[1].Id, picks.Current(pass.Id));
+
+        var after = compositor.Preview(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge), null, pass.Id);
+        Assert.Equal(12ul, after.Full.Items[EquipSlot.Head].Value.ItemId);
+        Assert.Equal(12ul, after.Focus!.Items[EquipSlot.Head].Value.ItemId);
+    }
+
+    [Fact]
+    public void MacroOverride_FiltersTheRandomPickToo()
+    {
+        var bridge = new FakeGlamourerBridge();
+        var (profile, pass, _) = RandomSetup(bridge);
+        pass.MacroOverride = ApplyMask.OnlyCustomization();
+        var compositor = new PassCompositor(new RandomLayerPicks(max => max - 1));
+
+        var (design, _) = compositor.Compose(profile, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge));
+
+        Assert.False(design.Items.ContainsKey(EquipSlot.Head));
+        Assert.Equal(2, design.Customize[CustomizeIndex.Hairstyle].Value);
+    }
+
     [Fact]
     public void ExplainListsGroupsPassesAndFields()
     {

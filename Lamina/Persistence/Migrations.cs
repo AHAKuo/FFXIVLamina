@@ -37,6 +37,9 @@ public static class Migrations
         // groups are moved behind the normal groups, in their old priority order (stable, so ties keep list order), which
         // reproduces the v2 result exactly. The field is dropped.
         new(FileKind.Profile, 2, DropFinalGroupPriority),
+        // Profile v3 → v4: passes gained the "randomLayers" list (one of them is picked at random). Older files simply have
+        // none, so nothing is rewritten; the bump tells older builds, which would drop the list on save, that the file is newer.
+        new(FileKind.Profile, 3, _ => { }),
     };
 
     /// <summary> Profile v2 → v3: reorders "passGroups" so final groups follow normal ones sorted by their old priority, then removes "priority". </summary>

@@ -25,6 +25,14 @@ public class JsonRoundTripTests
         Assert.Equal(2, reloaded.PassGroups.Count);
         Assert.True(reloaded.PassGroups[1].IsFinal);
         Assert.False(reloaded.PassGroups[1].Enabled);
+
+        var random = reloaded.PassGroups[0].Passes[0].RandomLayers;
+        Assert.Equal(2, random.Count);
+        Assert.IsType<GlamourerLayer>(random[0]);
+        var idle = Assert.IsType<HonorificLayer>(random[1]);
+        Assert.False(idle.Enabled);
+        Assert.True(idle.Collapsed);
+        Assert.Empty(reloaded.PassGroups[0].Passes[1].RandomLayers);
     }
 
     [Fact]

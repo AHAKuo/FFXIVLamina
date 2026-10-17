@@ -246,6 +246,62 @@ public class ProfileStoreTests
     }
 
     /// <summary> A layer's JSON without its id, for content comparisons between an original and its copy. </summary>
+    [Fact]
+    public void RandomSection_HasItsOwnLayerOps_AndLayersMoveBetweenSections()
+    {
+        using var dir = new TempDir();
+        var (store, _, _, _) = Create(dir.Path);
+        store.Load();
+        var profile = store.Profiles[0];
+        var pass    = store.AddPass(profile, profile.PassGroups[0]);
+        var r1      = new GlamourerLayer { DesignId = Guid.NewGuid() };
+        var r2      = new HonorificLayer { Title = "Idle" };
+        store.AddLayer(profile, pass, r1, LayerSection.Random);
+        store.AddLayer(profile, pass, r2, LayerSection.Random);
+        Assert.Empty(pass.Layers);
+        Assert.Equal(new Layer[] { r1, r2 }, pass.RandomLayers);
+        Assert.Equal(LayerSection.Random, pass.SectionOf(r1));
+        Assert.Equal(new Layer[] { r1, r2 }, pass.AllLayers);
+
+        // Section-scoped: the ordered list does not see them.
+        Assert.False(store.RemoveLayer(profile, pass, r1.Id));
+        Assert.Null(store.DuplicateLayer(profile, pass, r1.Id));
+        Assert.False(store.MoveLayer(profile, pass, 0, 1));
+
+        Assert.True(store.MoveLayer(profile, pass, 0, 1, LayerSection.Random));
+        Assert.Equal(new Layer[] { r2, r1 }, pass.RandomLayers);
+        var dup = store.DuplicateLayer(profile, pass, r2.Id, LayerSection.Random);
+        Assert.NotNull(dup);
+        Assert.Equal(new Layer[] { r2, dup!, r1 }, pass.RandomLayers);
+
+        // Random → ordered list of the same pass, then refused as a no-op, then back.
+        Assert.True(store.MoveLayerTo(profile, pass, r1, profile, pass, LayerSection.Layers));
+        Assert.Equal(new Layer[] { r1 }, pass.Layers);
+        Assert.DoesNotContain(r1, pass.RandomLayers);
+        Assert.False(store.MoveLayerTo(profile, pass, r1, profile, pass, LayerSection.Layers));
+        Assert.True(store.MoveLayerTo(profile, pass, r1, profile, pass, LayerSection.Random));
+        Assert.Empty(pass.Layers);
+        Assert.Same(r1, pass.RandomLayers[^1]);
+
+        var copy = store.CopyLayerTo(r1, profile, pass, LayerSection.Random);
+        Assert.Same(copy, pass.RandomLayers[^1]);
+        Assert.NotEqual(r1.Id, copy.Id);
+        Assert.True(store.RemoveLayer(profile, pass, copy.Id, LayerSection.Random));
+
+        // Fresh-id clones and the id walk cover the random section.
+        var clone = Cloner.CloneWithFreshIds(pass);
+        Assert.Equal(pass.RandomLayers.Count, clone.RandomLayers.Count);
+        Assert.Empty(clone.RandomLayers.Select(l => l.Id).Intersect(pass.RandomLayers.Select(l => l.Id)));
+        Assert.Contains(r1.Id, Cloner.AllIds(pass));
+
+        store.SaveNow();
+        var (reloadStore, _, _, _) = Create(dir.Path);
+        reloadStore.Load();
+        var reloaded = reloadStore.Profiles.Single(p => p.Id == profile.Id).PassGroups[0].Passes.Single(p => p.Id == pass.Id);
+        Assert.Equal(pass.RandomLayers.Select(l => l.Id), reloaded.RandomLayers.Select(l => l.Id));
+        Assert.Empty(reloaded.Layers);
+    }
+
     private static string WithoutId(Layer layer)
     {
         var obj = JObject.Parse(JsonSettings.Serialize(layer));

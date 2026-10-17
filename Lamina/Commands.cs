@@ -24,7 +24,7 @@ public sealed class Commands : IDisposable
 
         _services.CommandManager.AddHandler(LaminaCommand, new CommandInfo(OnLamina)
         {
-            HelpMessage = "Open Lamina. Subcommands: on, off, profile <name>, reapply, redraw, why, help.",
+            HelpMessage = "Open Lamina. Subcommands: on, off, profile <name>, reapply, reroll, redraw, why, help.",
         });
         _services.CommandManager.AddHandler(VitrineCommand, new CommandInfo(OnVitrine)
         {
@@ -61,6 +61,11 @@ public sealed class Commands : IDisposable
             case "reapply":
                 _services.Engine.RequestReapply();
                 Print("Re-applying.");
+                break;
+            case "reroll":
+                _services.Compositor.RandomPicks.Reroll();
+                _services.Engine.Invalidate();
+                Print("Random layers rolled again.");
                 break;
             case "redraw":
                 Print(_services.Engine.RedrawNow() ? "Redrawn." : "Redraw requested; Penumbra or your character is not available right now.");
@@ -104,6 +109,7 @@ public sealed class Commands : IDisposable
         Print("/lam on | off — master toggle (off reverts the character)");
         Print("/lam profile <name> — enable a profile (no name lists them)");
         Print("/lam reapply — re-evaluate and apply now");
+        Print("/lam reroll — pick the random layers of every pass again");
         Print("/lam redraw — redraw the character now");
         Print("/lam why — explain the current design");
         Print("/vit — open Vitrine (separate plugin, optional)");

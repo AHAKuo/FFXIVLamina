@@ -338,13 +338,14 @@ public sealed partial class LaminaWindow
                 : condTrue ? "Conditions are true, but the group is not active (or the pass is disabled)" : "Conditions are false right now");
             ImGui.SameLine();
 
-            var label = $"{p.Name}  ({p.Layers.Count})";
+            var hasRandom = p.RandomLayers.Count > 0;
+            var label     = $"{p.Name}  ({p.Layers.Count}{(hasRandom ? "+1" : string.Empty)})";
             using (ImRaii.PushColor(ImGuiCol.Text, p.Enabled ? new Vector4(1, 1, 1, 1) : Widgets.Muted))
             {
                 if (ImGui.Selectable(label + "##sel", _passId == p.Id, ImGuiSelectableFlags.None, new Vector2(ImGui.GetContentRegionAvail().X - RowButtonsWidth(), 0)))
                     Select(profile.Id, group.Id, p.Id);
             }
-            Widgets.Tooltip($"{p.Layers.Count} layer(s), {p.Conditions.Leaves().Count()} condition(s)");
+            Widgets.Tooltip($"{p.Layers.Count} layer(s){(hasRandom ? $" + one of {p.RandomLayers.Count} random layers" : string.Empty)}, {p.Conditions.Leaves().Count()} condition(s)");
 
             ImGui.SameLine();
             if (Widgets.IconButton(FontAwesomeIcon.ArrowUp, "Move up", i > 0)) { moveFrom = i; moveTo = i - 1; }
@@ -408,6 +409,13 @@ public sealed partial class LaminaWindow
         if (ImGui.CollapsingHeader("Layers", ImGuiTreeNodeFlags.DefaultOpen))
         {
             if (_layers.Draw(profile, pass, _layerStatus ??= (text, color) => SetStatus(text, color)))
+                _s.Engine.Invalidate();
+        }
+
+        ImGui.Spacing();
+        if (ImGui.CollapsingHeader("Random Layers", pass.RandomLayers.Count > 0 ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.None))
+        {
+            if (_layers.Draw(profile, pass, LayerSection.Random, _layerStatus ??= (text, color) => SetStatus(text, color)))
                 _s.Engine.Invalidate();
         }
 

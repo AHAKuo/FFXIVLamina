@@ -399,63 +399,69 @@ public sealed class ProfileStore
     // Layers
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary> Appends a layer to a pass. </summary>
-    public void AddLayer(Profile profile, Pass pass, Layer layer)
+    // Every operation takes the section (the ordered layer list or the random section); the ordered list is the default.
+
+    /// <summary> Appends a layer to a section of a pass. </summary>
+    public void AddLayer(Profile profile, Pass pass, Layer layer, LayerSection section = LayerSection.Layers)
     {
-        pass.Layers.Add(layer);
+        pass.LayersIn(section).Add(layer);
         Touch(profile);
     }
 
-    /// <summary> Removes a layer from a pass. </summary>
-    public bool RemoveLayer(Profile profile, Pass pass, Guid layerId)
+    /// <summary> Removes a layer from a section of a pass. </summary>
+    public bool RemoveLayer(Profile profile, Pass pass, Guid layerId, LayerSection section = LayerSection.Layers)
     {
-        var index = pass.Layers.FindIndex(l => l.Id == layerId);
+        var layers = pass.LayersIn(section);
+        var index  = layers.FindIndex(l => l.Id == layerId);
         if (index < 0)
             return false;
-        pass.Layers.RemoveAt(index);
+        layers.RemoveAt(index);
         Touch(profile);
         return true;
     }
 
-    /// <summary> Moves a layer from one list position to another inside its pass. </summary>
-    public bool MoveLayer(Profile profile, Pass pass, int fromIndex, int toIndex)
+    /// <summary> Moves a layer from one list position to another inside its section. </summary>
+    public bool MoveLayer(Profile profile, Pass pass, int fromIndex, int toIndex, LayerSection section = LayerSection.Layers)
     {
-        if (!Move(pass.Layers, fromIndex, toIndex))
+        if (!Move(pass.LayersIn(section), fromIndex, toIndex))
             return false;
         Touch(profile);
         return true;
     }
 
-    /// <summary> Inserts a deep copy (fresh id) right after the original. Returns null when the layer is not in the pass. </summary>
-    public Layer? DuplicateLayer(Profile profile, Pass pass, Guid layerId)
+    /// <summary> Inserts a deep copy (fresh id) right after the original. Returns null when the layer is not in the section. </summary>
+    public Layer? DuplicateLayer(Profile profile, Pass pass, Guid layerId, LayerSection section = LayerSection.Layers)
     {
-        var index = pass.Layers.FindIndex(l => l.Id == layerId);
+        var layers = pass.LayersIn(section);
+        var index  = layers.FindIndex(l => l.Id == layerId);
         if (index < 0)
             return null;
-        var copy = Cloner.CloneWithFreshIds(pass.Layers[index]);
-        pass.Layers.Insert(index + 1, copy);
+        var copy = Cloner.CloneWithFreshIds(layers[index]);
+        layers.Insert(index + 1, copy);
         Touch(profile);
         return copy;
     }
 
-    /// <summary> Appends a deep copy (fresh id) of a layer to another (or the same) pass. </summary>
-    public Layer CopyLayerTo(Layer layer, Profile targetProfile, Pass targetPass)
+    /// <summary> Appends a deep copy (fresh id) of a layer to a section of another (or the same) pass. </summary>
+    public Layer CopyLayerTo(Layer layer, Profile targetProfile, Pass targetPass, LayerSection targetSection = LayerSection.Layers)
     {
         var copy = Cloner.CloneWithFreshIds(layer);
-        targetPass.Layers.Add(copy);
+        targetPass.LayersIn(targetSection).Add(copy);
         Touch(targetProfile);
         return copy;
     }
 
     /// <summary>
-    /// Moves a layer (same id) to the end of another pass, possibly in another profile. Returns false when both passes are
-    /// the same or the layer is not in <paramref name="sourcePass"/>.
+    /// Moves a layer (same id) to the end of a section of another pass, possibly in another profile, or of the other section
+    /// of its own pass. Returns false when source and target are the same list or the layer is not in <paramref name="sourcePass"/>.
     /// </summary>
-    public bool MoveLayerTo(Profile sourceProfile, Pass sourcePass, Layer layer, Profile targetProfile, Pass targetPass)
+    public bool MoveLayerTo(Profile sourceProfile, Pass sourcePass, Layer layer, Profile targetProfile, Pass targetPass, LayerSection targetSection = LayerSection.Layers)
     {
-        if (ReferenceEquals(sourcePass, targetPass) || !sourcePass.Layers.Remove(layer))
+        var target = targetPass.LayersIn(targetSection);
+        if (sourcePass.SectionOf(layer) is not { } sourceSection || ReferenceEquals(sourcePass.LayersIn(sourceSection), target))
             return false;
-        targetPass.Layers.Add(layer);
+        sourcePass.LayersIn(sourceSection).Remove(layer);
+        target.Add(layer);
         MarkDirty(sourceProfile);
         Touch(targetProfile);
         return true;

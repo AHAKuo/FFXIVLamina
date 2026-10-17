@@ -45,6 +45,7 @@ public static class Fixtures
             Name          = "Everything",
             Conditions    = new ConditionStack { Root = new ConditionGroup { Op = GroupOp.Any, Negate = true, Children = { new TimeCondition { Clock = ClockKind.LT, FromMinutes = 60, ToMinutes = 120 } } } },
             Layers        = AllLayers(),
+            RandomLayers  = { new GlamourerLayer { DesignId = Guid.NewGuid() }, new HonorificLayer { Title = "Idle", Enabled = false, Collapsed = true } },
             MacroOverride = new ApplyMask { Equipment = EquipSlotFlags.Head | EquipSlotFlags.Body, Customization = CustomizeFlags.Hairstyle, Meta = false, Advanced = false, Mods = true },
         });
         normal.Passes.Add(new Pass { Name = "Empty" });

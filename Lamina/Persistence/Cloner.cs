@@ -67,7 +67,7 @@ public static class Cloner
         pass.Id = Guid.NewGuid();
         if (pass.Conditions.Root is { } root)
             Refresh(root);
-        foreach (var layer in pass.Layers)
+        foreach (var layer in pass.AllLayers)
             layer.Id = Guid.NewGuid();
     }
 
@@ -106,7 +106,7 @@ public static class Cloner
         yield return pass.Id;
         foreach (var id in AllIds(pass.Conditions))
             yield return id;
-        foreach (var layer in pass.Layers)
+        foreach (var layer in pass.AllLayers)
             yield return layer.Id;
     }
 

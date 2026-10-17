@@ -112,14 +112,14 @@ public sealed class DecalImageStore
         return deleted;
     }
 
-    /// <summary> Every image file name a decal layer in any of <paramref name="profiles"/> references (all groups, all passes). </summary>
+    /// <summary> Every image file name a decal layer in any of <paramref name="profiles"/> references (all groups, all passes, both layer sections). </summary>
     public static HashSet<string> ReferencedImages(IEnumerable<Profile> profiles)
     {
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var profile in profiles)
             foreach (var group in profile.PassGroups)
                 foreach (var pass in group.Passes)
-                    foreach (var layer in pass.Layers)
+                    foreach (var layer in pass.AllLayers)
                         if (layer is DecalLayer { ImageFile: { } image } && !string.IsNullOrWhiteSpace(image))
                             names.Add(image);
         return names;

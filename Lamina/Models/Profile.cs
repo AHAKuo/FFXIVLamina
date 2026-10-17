@@ -3,8 +3,8 @@ namespace Lamina.Models;
 /// <summary> A complete Lamina setup: pass groups, passes, layers, ending with its targets. Saved to profiles/&lt;Id&gt;.json. </summary>
 public sealed class Profile
 {
-    /// <summary> 2 since the Penumbra Adjust "applies" semantics and the Equipment / Appearance layers (see Migrations). </summary>
-    public const int CurrentVersion = 3;
+    /// <summary> 2 since the Penumbra Adjust "applies" semantics and the Equipment / Appearance layers, 4 since the random layers of a pass (see Migrations). </summary>
+    public const int CurrentVersion = 4;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -83,6 +83,35 @@ public sealed class Pass
     /// <summary> Ordered. Smashed into one FinalLayer at runtime in the evaluation direction. </summary>
     public List<Layer> Layers { get; set; } = new();
 
+    /// <summary>
+    /// The random section: one enabled layer of this list is chosen with equal chance and merges after <see cref="Layers"/>
+    /// (in list terms: as if it were the last row). The pick is made when the pass starts contributing and kept until it
+    /// stops, so a changing game state does not reshuffle it. Use case: several idle mods, one at random.
+    /// </summary>
+    public List<Layer> RandomLayers { get; set; } = new();
+
     /// <summary> Optional Macro Override: restricts what this pass may change. Null = everything. </summary>
     public ApplyMask? MacroOverride { get; set; }
+
+    /// <summary> Every layer of the pass, ordered layers first, then the random section. </summary>
+    [Newtonsoft.Json.JsonIgnore]
+    public IEnumerable<Layer> AllLayers
+        => Layers.Concat(RandomLayers);
+
+    /// <summary> The list behind a section. </summary>
+    public List<Layer> LayersIn(LayerSection section)
+        => section == LayerSection.Random ? RandomLayers : Layers;
+
+    /// <summary> The section a layer of this pass sits in, or null when the pass does not hold it. </summary>
+    public LayerSection? SectionOf(Layer layer)
+        => Layers.Contains(layer) ? LayerSection.Layers : RandomLayers.Contains(layer) ? LayerSection.Random : null;
+}
+
+/// <summary> The two layer lists of a pass. </summary>
+public enum LayerSection
+{
+    /// <summary> <see cref="Pass.Layers"/>: every enabled layer merges, in the evaluation direction. </summary>
+    Layers,
+    /// <summary> <see cref="Pass.RandomLayers"/>: one enabled layer is picked at random. </summary>
+    Random,
 }

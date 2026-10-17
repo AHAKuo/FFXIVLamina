@@ -74,18 +74,30 @@ internal sealed class LayerEditor
     /// <summary> Whether the per-layer transfer popup copies (true) or moves (false). Remembered across layers and frames. </summary>
     private bool _transferCopies;
 
-    /// <summary> A deferred move / copy of a layer to another pass, applied after the list was drawn. </summary>
-    private readonly record struct LayerTransfer(Layer Layer, Profile TargetProfile, Pass TargetPass, bool Copy);
+    /// <summary> A deferred move / copy of a layer to a section of another pass (or the other section of its own), applied after the list was drawn. </summary>
+    private readonly record struct LayerTransfer(Layer Layer, Profile TargetProfile, Pass TargetPass, LayerSection TargetSection, bool Copy);
+
+    private static string SectionName(LayerSection section)
+        => section == LayerSection.Random ? "Random layers" : "Layers";
 
     /// <summary>
-    /// Draws the layer list. Returns true when the design changed (the profile is already marked dirty); collapsing a card
-    /// does not count. <paramref name="status"/> receives copy / paste / move feedback for the window's status line.
+    /// Draws the ordered layer list of a pass. Returns true when the design changed (the profile is already marked dirty);
+    /// collapsing a card does not count. <paramref name="status"/> receives copy / paste / move feedback for the window's status line.
     /// </summary>
     public bool Draw(Profile profile, Pass pass, Action<string, Vector4>? status = null)
+        => Draw(profile, pass, LayerSection.Layers, status);
+
+    /// <summary> Draws one section of a pass: the ordered layer list, or the random section (one of its layers is picked). </summary>
+    public bool Draw(Profile profile, Pass pass, LayerSection section, Action<string, Vector4>? status = null)
     {
         _status = status;
         var changed = false;
-        var layers  = pass.Layers;
+        var layers  = pass.LayersIn(section);
+        var random  = section == LayerSection.Random;
+        using var sectionId = ImRaii.PushId(random ? "random" : "layers");
+
+        if (random)
+            DrawRandomStatus(pass);
 
         if (ImGui.Button("+ Add Layer"))
             ImGui.OpenPopup("##addLayer");
@@ -93,14 +105,22 @@ internal sealed class LayerEditor
         var canPaste = _copiedLayer is not null || ClipboardHasLayer();
         using (ImRaii.Disabled(!canPaste))
         {
-            if (ImGui.Button("Paste layer") && canPaste && PasteLayer(profile, pass))
+            if (ImGui.Button("Paste layer") && canPaste && PasteLayer(profile, pass, section))
                 changed = true;
         }
         Widgets.Tooltip(canPaste
-            ? "Appends the layer on the clipboard (or the one copied last) to this pass."
+            ? $"Appends the layer on the clipboard (or the one copied last) to this pass's {SectionName(section).ToLowerInvariant()}."
             : "Nothing to paste: copy a layer first (the clipboard holds no Lamina layer).");
         ImGui.SameLine();
-        Widgets.Hint(_s.Profiles.Config.Direction == EvaluationDirection.TopToBottom ? "lower layers override" : "upper layers override");
+        if (random)
+        {
+            var enabledCount = layers.Count(l => l.Enabled);
+            Widgets.Hint(enabledCount > 1 ? $"1 in {enabledCount} chance each" : enabledCount == 1 ? "only one enabled: always picked" : "nothing enabled");
+        }
+        else
+        {
+            Widgets.Hint(_s.Profiles.Config.Direction == EvaluationDirection.TopToBottom ? "lower layers override" : "upper layers override");
+        }
 
         // Collapse / expand all, right-aligned on the same line.
         var foldWidth = IconButtonWidth(FontAwesomeIcon.AngleDoubleUp) + HeaderButtonGap + IconButtonWidth(FontAwesomeIcon.AngleDoubleDown);
@@ -120,7 +140,7 @@ internal sealed class LayerEditor
                     using var dis = ImRaii.Disabled(!available);
                     if (ImGui.Selectable(display) && available)
                     {
-                        _s.Profiles.AddLayer(profile, pass, create());
+                        _s.Profiles.AddLayer(profile, pass, create(), section);
                         changed = true;
                     }
                     if (!available)
@@ -134,6 +154,7 @@ internal sealed class LayerEditor
         Guid? remove = null, duplicate = null;
         LayerTransfer? transfer = null;
         var buttonsWidth = HeaderButtons.Sum(IconButtonWidth) + (HeaderButtons.Length - 1) * HeaderButtonGap;
+        var picked       = random ? _s.Compositor.RandomPicks.Current(pass.Id) : null;
         for (var i = 0; i < layers.Count; i++)
         {
             var layer = layers[i];
@@ -173,6 +194,11 @@ internal sealed class LayerEditor
                     ImGui.SameLine();
                     Widgets.Badge("(plugin missing)", Widgets.Warn);
                 }
+                if (picked == layer.Id)
+                {
+                    ImGui.SameLine();
+                    Widgets.Badge("in effect", Widgets.Good, "The current roll picked this layer.");
+                }
             }
             ImGui.PopClipRect();
             if (ImGui.IsItemHovered() && ImGui.GetMousePos().X < textMaxX)
@@ -191,10 +217,10 @@ internal sealed class LayerEditor
             ImGui.SameLine(0, HeaderButtonGap);
             if (Widgets.IconButton(FontAwesomeIcon.Copy, "Copy to the clipboard (paste into any pass with \"Paste layer\")")) CopyLayer(layer);
             ImGui.SameLine(0, HeaderButtonGap);
-            if (Widgets.IconButton(FontAwesomeIcon.ShareSquare, "Move or copy to another pass…")) ImGui.OpenPopup("##layerTo");
+            if (Widgets.IconButton(FontAwesomeIcon.ShareSquare, "Move or copy to another pass or section…")) ImGui.OpenPopup("##layerTo");
             ImGui.SameLine(0, HeaderButtonGap);
             if (Widgets.IconButton(FontAwesomeIcon.Trash, "Remove layer")) remove = layer.Id;
-            DrawTransferPopup(pass, layer, ref transfer);
+            DrawTransferPopup(pass, section, layer, ref transfer);
 
             if (layer.Collapsed)
                 continue;
@@ -206,13 +232,15 @@ internal sealed class LayerEditor
             }
         }
         if (layers.Count == 0)
-            Widgets.Hint("No layers. A pass without layers changes nothing.");
+            Widgets.Hint(random
+                ? "No random layers. Add two or more and one of them is picked each time this pass starts contributing."
+                : "No layers. A pass without layers changes nothing.");
 
-        if (moveFrom is { } f && moveTo is { } t && _s.Profiles.MoveLayer(profile, pass, f, t))
+        if (moveFrom is { } f && moveTo is { } t && _s.Profiles.MoveLayer(profile, pass, f, t, section))
             changed = true;
-        if (duplicate is { } d && _s.Profiles.DuplicateLayer(profile, pass, d) is not null)
+        if (duplicate is { } d && _s.Profiles.DuplicateLayer(profile, pass, d, section) is not null)
             changed = true;
-        if (remove is { } r && _s.Profiles.RemoveLayer(profile, pass, r))
+        if (remove is { } r && _s.Profiles.RemoveLayer(profile, pass, r, section))
         {
             changed = true;
             PruneImages();
@@ -220,6 +248,45 @@ internal sealed class LayerEditor
         if (transfer is { } x && ApplyTransfer(profile, pass, x))
             changed = true;
         return changed;
+    }
+
+    /// <summary> Explanation, current pick and the "Roll again" button at the top of the random section. </summary>
+    private void DrawRandomStatus(Pass pass)
+    {
+        Widgets.Paragraph("One of these layers is picked with equal chance each time this pass starts contributing; the others are ignored. "
+                        + "The pick is kept until the pass stops contributing (a game state change does not reshuffle it) and merges after the layers above. "
+                        + "Disabled layers are never picked.");
+        var picks   = _s.Compositor.RandomPicks;
+        var current = picks.Current(pass.Id) is { } id ? pass.RandomLayers.FirstOrDefault(l => l.Id == id) : null;
+        ImGui.AlignTextToFramePadding();
+        if (current is not null)
+        {
+            ImGui.TextUnformatted("In effect:");
+            ImGui.SameLine();
+            using (ImRaii.PushColor(ImGuiCol.Text, Widgets.Accent))
+                ImGui.TextUnformatted(DisplayName(current.Kind));
+            ImGui.SameLine();
+            ImGui.TextUnformatted(Summary(current));
+        }
+        else
+        {
+            Widgets.Hint(pass.RandomLayers.Any(l => l.Enabled)
+                ? "Not rolled yet: the roll happens when this pass starts contributing. Until then previews show the first enabled layer."
+                : "Nothing to pick.");
+        }
+        ImGui.SameLine();
+        var canRoll = pass.RandomLayers.Count(l => l.Enabled) > 1;
+        using (ImRaii.Disabled(!canRoll))
+        {
+            if (ImGui.SmallButton("Roll again"))
+            {
+                picks.Reroll(pass.Id);
+                _s.Engine.Invalidate();
+                Report("Rolled again; the new pick applies on the next evaluation.", Widgets.Good);
+            }
+        }
+        Widgets.Tooltip(canRoll ? "Forgets the current pick; a new one is rolled right away if the pass is contributing, else when it next does. /lam reroll does this for every pass."
+                                : "Needs at least two enabled layers to pick from.");
     }
 
     /// <summary> Deletes imported images no decal layer references any more (after an image change or a layer removal). </summary>
@@ -325,8 +392,8 @@ internal sealed class LayerEditor
         }
     }
 
-    /// <summary> Appends the clipboard's layer, else the one copied last, to the pass. Returns true when a layer was added. </summary>
-    private bool PasteLayer(Profile profile, Pass pass)
+    /// <summary> Appends the clipboard's layer, else the one copied last, to a section of the pass. Returns true when a layer was added. </summary>
+    private bool PasteLayer(Profile profile, Pass pass, LayerSection section)
     {
         Layer? layer = null;
         IReadOnlyList<string> warnings = Array.Empty<string>();
@@ -360,14 +427,17 @@ internal sealed class LayerEditor
             return false;
         }
 
-        _s.Profiles.AddLayer(profile, pass, layer);
+        _s.Profiles.AddLayer(profile, pass, layer, section);
         var name = DisplayName(layer.Kind);
         Report(warnings.Count == 0 ? $"Pasted {name} layer." : $"Pasted {name} layer. {string.Join(" ", warnings)}", warnings.Count == 0 ? Widgets.Good : Widgets.Warn);
         return true;
     }
 
-    /// <summary> Every profile → group → pass (except the current pass) as nested menus; the choice is deferred to <paramref name="transfer"/>. </summary>
-    private void DrawTransferPopup(Pass pass, Layer layer, ref LayerTransfer? transfer)
+    /// <summary>
+    /// Every profile → group → pass → section as nested menus, except the section the layer is in now; the choice is deferred
+    /// to <paramref name="transfer"/>.
+    /// </summary>
+    private void DrawTransferPopup(Pass pass, LayerSection section, Layer layer, ref LayerTransfer? transfer)
     {
         using var popup = ImRaii.Popup("##layerTo");
         if (!popup)
@@ -379,19 +449,17 @@ internal sealed class LayerEditor
         Widgets.Hint("to:");
         ImGui.Separator();
 
-        var listed = 0;
         foreach (var target in _s.Profiles.Profiles)
         {
-            if (!target.PassGroups.Any(g => g.Passes.Any(p => !ReferenceEquals(p, pass))))
+            if (!target.PassGroups.Any(g => g.Passes.Count > 0))
                 continue;
-            listed++;
             using var pid  = ImRaii.PushId(target.Id.ToString());
             using var menu = ImRaii.Menu(target.Name);
             if (!menu)
                 continue;
             foreach (var group in target.PassGroups)
             {
-                if (!group.Passes.Any(p => !ReferenceEquals(p, pass)))
+                if (group.Passes.Count == 0)
                     continue;
                 using var gid   = ImRaii.PushId(group.Id.ToString());
                 using var gmenu = ImRaii.Menu(group.Name);
@@ -399,29 +467,34 @@ internal sealed class LayerEditor
                     continue;
                 foreach (var targetPass in group.Passes)
                 {
-                    if (ReferenceEquals(targetPass, pass))
+                    using var tid   = ImRaii.PushId(targetPass.Id.ToString());
+                    using var pmenu = ImRaii.Menu(ReferenceEquals(targetPass, pass) ? $"{targetPass.Name} (this pass)" : targetPass.Name);
+                    if (!pmenu)
                         continue;
-                    using var tid = ImRaii.PushId(targetPass.Id.ToString());
-                    if (ImGui.MenuItem(targetPass.Name))
-                        transfer = new LayerTransfer(layer, target, targetPass, _transferCopies);
+                    foreach (var targetSection in new[] { LayerSection.Layers, LayerSection.Random })
+                    {
+                        if (ReferenceEquals(targetPass, pass) && targetSection == section)
+                            continue;
+                        if (ImGui.MenuItem(SectionName(targetSection)))
+                            transfer = new LayerTransfer(layer, target, targetPass, targetSection, _transferCopies);
+                    }
                 }
             }
         }
-        if (listed == 0)
-            Widgets.Hint("No other pass to put the layer in.");
     }
 
     private bool ApplyTransfer(Profile profile, Pass pass, LayerTransfer x)
     {
-        var where = $"{x.TargetProfile.Name} / {_s.Profiles.GroupOf(x.TargetPass)?.Name ?? "?"} / {x.TargetPass.Name}";
+        var where = $"{x.TargetProfile.Name} / {_s.Profiles.GroupOf(x.TargetPass)?.Name ?? "?"} / {x.TargetPass.Name}"
+                  + (x.TargetSection == LayerSection.Random ? " (random layers)" : string.Empty);
         var name  = DisplayName(x.Layer.Kind);
         if (x.Copy)
         {
-            _s.Profiles.CopyLayerTo(x.Layer, x.TargetProfile, x.TargetPass);
+            _s.Profiles.CopyLayerTo(x.Layer, x.TargetProfile, x.TargetPass, x.TargetSection);
             Report($"Copied {name} layer to {where}.", Widgets.Good);
             return true;
         }
-        if (!_s.Profiles.MoveLayerTo(profile, pass, x.Layer, x.TargetProfile, x.TargetPass))
+        if (!_s.Profiles.MoveLayerTo(profile, pass, x.Layer, x.TargetProfile, x.TargetPass, x.TargetSection))
             return false;
         Report($"Moved {name} layer to {where}.", Widgets.Good);
         return true;

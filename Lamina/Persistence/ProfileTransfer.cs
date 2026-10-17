@@ -246,7 +246,7 @@ public static class ProfileTransfer
             return TransferKind.Profile;
         if (Has(obj, "passes") || Has(obj, "isFinal"))
             return TransferKind.PassGroup;
-        if (Has(obj, "layers") || Has(obj, "macroOverride"))
+        if (Has(obj, "layers") || Has(obj, "randomLayers") || Has(obj, "macroOverride"))
             return TransferKind.Pass;
         if (Has(obj, KindConverter<Layer>.KindProperty))
             return TransferKind.Layer;
@@ -266,7 +266,7 @@ public static class ProfileTransfer
     private static void Check(Pass pass, ReferenceResolvers resolvers, List<string> warnings)
     {
         CheckConditions(pass.Conditions, $"pass '{pass.Name}'", warnings);
-        foreach (var layer in pass.Layers)
+        foreach (var layer in pass.AllLayers)
             Check(layer, $"Pass '{pass.Name}'", resolvers, warnings);
     }
 

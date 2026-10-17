@@ -20,13 +20,26 @@ public sealed record PreviewResult(
 /// Implements TDD 5.9: first true normal group wins, then every true final group in list order; passes and layers are walked in
 /// the evaluation direction and later merges override earlier ones (unset = passthrough).
 /// Macro Override masks are applied per layer, to Glamourer, Vitrine, Equipment and Appearance layers only, before the layer merges.
+/// A pass's random section contributes one layer, chosen through <see cref="RandomPicks"/>; it merges as if it were the last row of
+/// the pass's layer list (so it wins top to bottom and yields bottom to top).
 /// </summary>
 public sealed class PassCompositor
 {
-    /// <summary> Composes the final design for one profile. </summary>
+    /// <param name="randomPicks"> The random section picks shared with the UI. A fresh store when omitted. </param>
+    public PassCompositor(RandomLayerPicks? randomPicks = null)
+        => RandomPicks = randomPicks ?? new RandomLayerPicks();
+
+    /// <summary> Which random layer each pass uses right now. <see cref="Compose"/> rolls and commits; <see cref="Preview"/> only reads. </summary>
+    public RandomLayerPicks RandomPicks { get; }
+
+    /// <summary> Composes the final design for one profile. Rolls the random sections of newly contributing passes and forgets those of passes that stopped. </summary>
     public (VirtualDesign Design, EvaluationReport Report) Compose(Profile profile, GameStateSnapshot snapshot,
         IConditionEvaluator evaluator, EvaluationDirection direction, LayerResolver resolver)
-        => ComposeCore(profile, snapshot, direction, resolver, stack => evaluator.Evaluate(stack, snapshot));
+    {
+        var result = ComposeCore(profile, snapshot, direction, resolver, stack => evaluator.Evaluate(stack, snapshot), commitRandom: true);
+        RandomPicks.Retain(result.Item2.MatchedPassIds);
+        return result;
+    }
 
     /// <summary> Smashes one pass's layers into its FinalLayer draft (TDD 5.3), with masks applied per layer. </summary>
     /// <param name="pass"> The pass. </param>
@@ -36,13 +49,17 @@ public sealed class PassCompositor
     /// <param name="direction"> Evaluation direction. </param>
     /// <param name="skipped"> Layers that contributed nothing, with reasons. </param>
     /// <param name="snapshot"> The game state the design is composed for (Vitrine layers pick the hair / face / tail entry fitting the player). </param>
+    /// <param name="commitRandom"> Store a fresh roll of the random section (the engine); false for previews, which only read the current pick. </param>
     public DesignDraft BuildPassLayer(Pass pass, Provenance basis, string groupName, LayerResolver resolver, EvaluationDirection direction,
-        List<(Guid LayerId, string Reason)> skipped, GameStateSnapshot? snapshot = null)
+        List<(Guid LayerId, string Reason)> skipped, GameStateSnapshot? snapshot = null, bool commitRandom = false)
     {
-        var final = new DesignDraft();
-        foreach (var layer in Ordered(pass.Layers, direction))
+        var final  = new DesignDraft();
+        var random = RandomPicks.Choose(pass, commitRandom);
+        var rows   = random is null ? pass.Layers : (IReadOnlyList<Layer>)pass.Layers.Append(random).ToList();
+        foreach (var layer in Ordered(rows, direction))
         {
-            var source = new Provenance(basis.GroupId, pass.Id, layer.Id, $"{groupName} / {pass.Name} / {layer.Describe()}");
+            var note   = ReferenceEquals(layer, random) ? $"{groupName} / {pass.Name} / {layer.Describe()} (random pick)" : $"{groupName} / {pass.Name} / {layer.Describe()}";
+            var source = new Provenance(basis.GroupId, pass.Id, layer.Id, note);
             var draft  = resolver.Resolve(layer, source, out var reason, snapshot);
             if (draft is null)
             {
@@ -66,7 +83,7 @@ public sealed class PassCompositor
     public PreviewResult Preview(Profile profile, GameStateSnapshot snapshot, IConditionEvaluator evaluator,
         EvaluationDirection direction, LayerResolver resolver, Guid? focusGroupId, Guid? focusPassId)
     {
-        var (full, report) = ComposeCore(profile, snapshot, direction, resolver, stack => evaluator.EvaluateInstant(stack, snapshot));
+        var (full, report) = ComposeCore(profile, snapshot, direction, resolver, stack => evaluator.EvaluateInstant(stack, snapshot), commitRandom: false);
 
         VirtualDesign? focus       = null;
         var            focusMatch  = false;
@@ -90,7 +107,7 @@ public sealed class PassCompositor
         {
             var draft   = new DesignDraft();
             var matched = new List<Guid>();
-            MergeGroup(group, draft, matched, focusSkipped, resolver, direction, stack => evaluator.EvaluateInstant(stack, snapshot), snapshot);
+            MergeGroup(group, draft, matched, focusSkipped, resolver, direction, stack => evaluator.EvaluateInstant(stack, snapshot), snapshot, commitRandom: false);
             focus      = draft.Freeze(profile.Id, group.Id, Array.Empty<Guid>(), matched);
             focusMatch = group.Enabled && evaluator.EvaluateInstant(group.Conditions, snapshot);
         }
@@ -99,7 +116,7 @@ public sealed class PassCompositor
     }
 
     private (VirtualDesign, EvaluationReport) ComposeCore(Profile profile, GameStateSnapshot snapshot, EvaluationDirection direction,
-        LayerResolver resolver, Func<ConditionStack, bool> isTrue)
+        LayerResolver resolver, Func<ConditionStack, bool> isTrue, bool commitRandom)
     {
         var draft   = new DesignDraft();
         var matched = new List<Guid>();
@@ -119,7 +136,7 @@ public sealed class PassCompositor
         }
 
         if (active is not null)
-            MergeGroup(active, draft, matched, skipped, resolver, direction, isTrue, snapshot);
+            MergeGroup(active, draft, matched, skipped, resolver, direction, isTrue, snapshot, commitRandom);
 
         // 2. Final groups: every true one, in list order (later merges on top and wins).
         var finals = new List<Guid>();
@@ -128,7 +145,7 @@ public sealed class PassCompositor
             if (!isTrue(group.Conditions))
                 continue;
             finals.Add(group.Id);
-            MergeGroup(group, draft, matched, skipped, resolver, direction, isTrue, snapshot);
+            MergeGroup(group, draft, matched, skipped, resolver, direction, isTrue, snapshot, commitRandom);
         }
 
         var design = draft.Freeze(profile.Id, active?.Id, finals, matched);
@@ -137,14 +154,14 @@ public sealed class PassCompositor
     }
 
     private void MergeGroup(PassGroup group, DesignDraft draft, List<Guid> matched, List<(Guid, string)> skipped,
-        LayerResolver resolver, EvaluationDirection direction, Func<ConditionStack, bool> isTrue, GameStateSnapshot? snapshot)
+        LayerResolver resolver, EvaluationDirection direction, Func<ConditionStack, bool> isTrue, GameStateSnapshot? snapshot, bool commitRandom)
     {
         foreach (var pass in Ordered(group.Passes, direction))
         {
             if (!pass.Enabled || !isTrue(pass.Conditions))
                 continue;
             matched.Add(pass.Id);
-            var final = BuildPassLayer(pass, new Provenance(group.Id, pass.Id, null, string.Empty), group.Name, resolver, direction, skipped, snapshot);
+            var final = BuildPassLayer(pass, new Provenance(group.Id, pass.Id, null, string.Empty), group.Name, resolver, direction, skipped, snapshot, commitRandom);
             draft.MergeOnTop(final);
         }
     }

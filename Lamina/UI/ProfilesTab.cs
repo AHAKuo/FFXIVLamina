@@ -247,7 +247,7 @@ public sealed partial class LaminaWindow
                 break;
 
             case TransferKind.Pass when import.Pass is { } pass:
-                ImGui.TextUnformatted($"Pass \"{pass.Name}\": {pass.Layers.Count} layer(s). Choose the profile and group to add it to:");
+                ImGui.TextUnformatted($"Pass \"{pass.Name}\": {pass.Layers.Count} layer(s){(pass.RandomLayers.Count > 0 ? $", {pass.RandomLayers.Count} random" : string.Empty)}. Choose the profile and group to add it to:");
                 DrawImportProfilePicker(profiles);
                 var tprof = _importTargetProfile is { } tpid ? _s.Profiles.GetProfile(tpid) : null;
                 if (tprof is not null)

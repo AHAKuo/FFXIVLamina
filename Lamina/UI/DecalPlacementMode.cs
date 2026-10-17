@@ -212,7 +212,7 @@ internal sealed class DecalPlacementMode
     /// <summary> The layer may be removed (or its profile deleted) while placing; then the mode ends by itself. </summary>
     private bool LayerStillExists(Profile profile, DecalLayer layer)
         => _s.Profiles.GetProfile(profile.Id) is { } current
-        && current.PassGroups.Any(g => g.Passes.Any(p => p.Layers.Any(l => l.Id == layer.Id)));
+        && current.PassGroups.Any(g => g.Passes.Any(p => p.AllLayers.Any(l => l.Id == layer.Id)));
 
     private DecalPick? SafePick(IDecalPicker picker, Vector2 mouse)
     {
