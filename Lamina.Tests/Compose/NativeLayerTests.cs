@@ -228,7 +228,7 @@ public class NativeLayerTests
             PassGroups =
             {
                 Build.Group("Home", true, Build.Pass("look", true, DesignWithHair(bridge, 5, 60, 777))),
-                Build.FinalGroup("Sitting", true, 10, Build.Pass("no shoes", true, sitting)),
+                Build.FinalGroup("Sitting", true, Build.Pass("no shoes", true, sitting)),
             },
         };
 

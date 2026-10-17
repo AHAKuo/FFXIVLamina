@@ -53,7 +53,7 @@ This removes the flicker and redraw spam of rule-by-rule tools (the reason Lamin
 |---|---|
 | **Profile** | A complete Lamina setup (its pass groups and passes) that ends with its **Targets**. One active profile per target. |
 | **Target** | Who receives the applications. First build: the local player only. |
-| **Pass Group** | A container of passes with its **own** condition stack. Normal groups act like a switch (first true wins). Groups marked **Final** are layered on top by priority. |
+| **Pass Group** | A container of passes with its **own** condition stack. Normal groups act like a switch (first true wins). Groups marked **Final** are layered on top in list order (lower rows override). |
 | **Pass** | One row in a pass group: a condition stack plus a list of layers. |
 | **Condition stack** | A tree of conditions (All / Any / Not) that decides if a pass or group is true. |
 | **Layer** | One contribution inside a pass: a Glamourer design, a Penumbra Adjust, a Vitrine design, an Honorific title, Moodles. |
@@ -129,11 +129,11 @@ This removes the flicker and redraw spam of rule-by-rule tools (the reason Lamin
 Each pass group has its **own condition stack**.
 
 - **Normal groups** are checked in list order. The **first** true group wins and the check **stops** there. No other normal group is checked. Only the winning group's passes are evaluated.
-- **Final pass groups** (toggle on the group) are evaluated after that. Every final group whose condition stack is true is included **on top**, sorted by its **Priority** field.
+- **Final pass groups** (toggle on the group) are evaluated after that. Every final group whose condition stack is true is included **on top**, in list order: a later final group merges later and wins. The UI lists them in their own section below the normal groups.
 - Example of a final group: *"Remove a piece of equipment while sitting"*. Condition: sitting. It layers on top of whichever normal group is active.
 
 ```
-final design = merge( winning normal group , active final groups by priority )
+final design = merge( winning normal group , active final groups in list order )
 ```
 
 ### 5.3 Passes and layers
@@ -143,7 +143,7 @@ final design = merge( winning normal group , active final groups by priority )
 - Inside a group, every **matching** pass contributes its FinalLayer. Passes further down the chain override earlier ones.
 - **Evaluation direction** (setting): top to bottom with **bottom winning** by default ("falling toward the ground"), or bottom to top.
 
-> **UI note:** list position means opposite things in two places. For **pass groups** the top has priority (first match wins). For **passes** the bottom wins (everything matching stacks, later overrides). Each list shows a hint: "first match wins" / "lower rows override".
+> **UI note:** list position means opposite things in two places. For **normal pass groups** the top has priority (first match wins). For **final groups** and for **passes** the bottom wins (everything matching stacks, later overrides). Each list shows a hint: "first match wins" / "lower rows override".
 
 ### 5.4 Conditions
 - Conditions are added through an **Add Condition** mini menu (keeps the UI clean).
@@ -198,10 +198,9 @@ VirtualDesign? Evaluate(Profile profile, Target target, GameStateSnapshot s)
             if (pass.Enabled && conditions.Eval(pass.Conditions, s))
                 draft.MergeOnTop(pass.BuildFinalLayer()); // layers smashed, mask applied
 
-    // 2. Final groups: every active one, by priority
+    // 2. Final groups: every active one, in list order (later wins)
     foreach (var g in profile.PassGroups
-                 .Where(g => g.Enabled && g.IsFinal && conditions.Eval(g.Conditions, s))
-                 .OrderBy(g => g.Priority))
+                 .Where(g => g.Enabled && g.IsFinal && conditions.Eval(g.Conditions, s)))
         foreach (var pass in Ordered(g.Passes))
             if (pass.Enabled && conditions.Eval(pass.Conditions, s))
                 draft.MergeOnTop(pass.BuildFinalLayer());
@@ -220,9 +219,10 @@ Toolbar: **Passes · Profiles · Settings · About**
 #### Passes tab
 ```
 Pass Groups (Default, Home, Duty, ...)          ← list, first true wins
+Final Groups (Sitting, ...)                     ← own section below, lower rows override
  └─ Pass Group
      ├─ Group conditions (+ Add Condition mini menu)
-     ├─ Final Pass toggle  → enables Priority field
+     ├─ Final Pass toggle  → moves the group to the Final Groups section
      └─ Passes (vertical list)                   ← lower rows override
          └─ Pass
              ├─ Conditions (top to bottom)  (+ Add Condition mini menu)
@@ -232,7 +232,7 @@ Pass Groups (Default, Home, Duty, ...)          ← list, first true wins
              └─ Virtual Design preview: implicit preview of what this condition tree produces
 ```
 - Pass groups are non layerable condition stacks where only one normal group can be true at a time, like a switch. When one is true, only the condition stacks in it are evaluated.
-- **Final Pass (toggle):** if true, the group runs at the very end and gets a priority field. If final pass groups exist, the final design is built from the winning group plus all active final groups in sequence by priority.
+- **Final Pass (toggle):** if true, the group runs at the very end and is listed in the Final Groups section. If final pass groups exist, the final design is built from the winning group plus all active final groups in list order.
 - **Preview:** shows what the selected pass / group would produce right now, using provenance to show which pass set each field.
 - When conditions match, the final layer is collected (like merging layers in Photoshop) and the final design is applied in one draw. **Never draw after a single condition passes.**
 
@@ -279,8 +279,8 @@ StateTracker → ConditionEvaluator → PassGroupSelector → PassCompositor
 |---|---|---|
 | 1 | **StateTracker** | Listens to Dalamud (territory change, condition flag changes, job / gearset change, login / logout) and polls slow things (Eorzea time, weather) about once a second. Builds a new `GameStateSnapshot` per target **only when something relevant changed**. First build: local player only. |
 | 2 | **ConditionEvaluator** | Evaluates condition stacks against the snapshot. Owns **hold / linger** timers. Caches results per snapshot. |
-| 3 | **PassGroupSelector** | Checks normal groups in list order and **stops at the first true one**. Then counts every active final group, sorted by priority. |
-| 4 | **PassCompositor** | Starts from a clean slate. Walks the selected passes in the evaluation direction; each matching pass smashes its layers (through its Macro Override mask) into `Pass.FinalLayer`; final layers merge in order (unset = passthrough); final groups merge by priority. Freezes one immutable `VirtualDesign` per target, with provenance. |
+| 3 | **PassGroupSelector** | Checks normal groups in list order and **stops at the first true one**. Then counts every active final group, in list order. |
+| 4 | **PassCompositor** | Starts from a clean slate. Walks the selected passes in the evaluation direction; each matching pass smashes its layers (through its Macro Override mask) into `Pass.FinalLayer`; final layers merge in order (unset = passthrough); final groups merge in list order. Freezes one immutable `VirtualDesign` per target, with provenance. |
 | 5 | **DesignDiffer** | Compares with `AppliedState`. Identical: do nothing. Otherwise computes the delta per integration and whether a redraw is needed (only Penumbra changes need one). |
 | 6 | **Applier** | Pushes the delta per target in one batch: **Penumbra** (skipped if the target opted out): remove all of Lamina's temporary settings in one call, then write the full mod state of the new design (Vitrine designs, Glamourer mod associations, Penumbra Adjust layers). **Glamourer** state (locked with Lamina's key). **Honorific** title. **Moodles**. All in the same frame, before the single redraw. |
 | 7 | **RedrawScheduler** | At most **one** redraw per apply, only if mods changed. Defers while unsafe (combat, cutscene, loading, mounted / flying) and coalesces requests. |
@@ -348,7 +348,7 @@ class PassGroup
 {
     Guid Id; string Name; bool Enabled;
     ConditionStack Conditions;            // its own
-    bool IsFinal; int Priority;           // Priority used only when IsFinal
+    bool IsFinal;                         // final groups layer on top, in list order
     List<Pass> Passes;                    // ordered
 }
 
@@ -517,14 +517,14 @@ pluginConfigs/Lamina/
 ### 10.6 Example: `profiles/<id>.json`
 ```json
 {
-  "version": 1,
+  "version": 3,
   "id": "6f1c…",
   "name": "Main",
   "enabled": true,
   "targets": [ { "kind": "LocalPlayer" } ],
   "passGroups": [ {
     "id": "…", "name": "Home",
-    "isFinal": false, "priority": 0,
+    "isFinal": false,
     "conditions": { "op": "All", "children": [
       { "kind": "Housing", "where": "OwnHouse" } ] },
     "passes": [ {

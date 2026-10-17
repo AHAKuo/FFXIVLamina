@@ -33,7 +33,38 @@ public static class Migrations
         // their entries set the state and every listed group, so nothing is rewritten; the bump only tells older builds
         // (which cannot read a null state) that the file is newer.
         new(FileKind.Profile, 1, _ => { }),
+        // Profile v2 → v3: final pass groups lost their "priority" field; they now merge in list order (later wins). Final
+        // groups are moved behind the normal groups, in their old priority order (stable, so ties keep list order), which
+        // reproduces the v2 result exactly. The field is dropped.
+        new(FileKind.Profile, 2, DropFinalGroupPriority),
     };
+
+    /// <summary> Profile v2 → v3: reorders "passGroups" so final groups follow normal ones sorted by their old priority, then removes "priority". </summary>
+    internal static void DropFinalGroupPriority(JObject profile)
+    {
+        if (profile["passGroups"] is not JArray groups)
+            return;
+
+        var normal = new List<JToken>();
+        var finals = new List<(JToken Group, int Priority)>();
+        foreach (var group in groups)
+        {
+            var isFinal  = group is JObject o && o["isFinal"] is { Type: JTokenType.Boolean } f && f.Value<bool>();
+            var priority = group is JObject p && p["priority"] is { Type: JTokenType.Integer } v ? v.Value<int>() : 0;
+            if (isFinal)
+                finals.Add((group, priority));
+            else
+                normal.Add(group);
+            if (group is JObject obj)
+                obj.Remove("priority");
+        }
+
+        groups.Clear();
+        foreach (var group in normal)
+            groups.Add(group);
+        foreach (var (group, _) in finals.OrderBy(f => f.Priority)) // OrderBy is stable: equal priorities keep list order
+            groups.Add(group);
+    }
 
     /// <summary> Current version of each file kind. </summary>
     public static int CurrentVersion(FileKind kind)

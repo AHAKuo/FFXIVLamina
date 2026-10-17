@@ -4,7 +4,7 @@ namespace Lamina.Models;
 public sealed class Profile
 {
     /// <summary> 2 since the Penumbra Adjust "applies" semantics and the Equipment / Appearance layers (see Migrations). </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -15,7 +15,7 @@ public sealed class Profile
     /// <summary> Only one enabled profile per target. Enabling one disables others sharing a target. </summary>
     public bool Enabled { get; set; }
 
-    /// <summary> Ordered. Normal groups: first true wins. Final groups: all true ones layer on top by Priority. </summary>
+    /// <summary> Ordered. Normal groups: first true wins. Final groups: every true one layers on top, in list order (later wins). </summary>
     public List<PassGroup> PassGroups { get; set; } = new();
 
     public List<Target> Targets { get; set; } = new() { Target.LocalPlayer() };
@@ -63,11 +63,8 @@ public sealed class PassGroup
 
     public ConditionStack Conditions { get; set; } = new();
 
-    /// <summary> Final groups are evaluated after the winning normal group and layered on top by Priority. </summary>
+    /// <summary> Final groups are evaluated after the winning normal group and layered on top in list order: later merges later and wins. </summary>
     public bool IsFinal { get; set; }
-
-    /// <summary> Only used when IsFinal. Lower priority merges first, higher priority wins. </summary>
-    public int Priority { get; set; }
 
     /// <summary> Ordered. Every matching pass contributes; evaluation direction decides who wins. </summary>
     public List<Pass> Passes { get; set; } = new();

@@ -49,7 +49,7 @@ public static class Fixtures
         });
         normal.Passes.Add(new Pass { Name = "Empty" });
 
-        var final = new PassGroup { Name = "Final", IsFinal = true, Priority = 5, Enabled = false };
+        var final = new PassGroup { Name = "Final", IsFinal = true, Enabled = false };
         final.Passes.Add(new Pass { Name = "Sit", Conditions = new ConditionStack { Root = new EmoteCondition { Poses = { PoseKind.Sitting }, HoldSeconds = 0.25f, LingerSeconds = 2f } } });
 
         profile.PassGroups.Add(normal);

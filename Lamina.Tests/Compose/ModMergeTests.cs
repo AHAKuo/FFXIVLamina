@@ -109,7 +109,7 @@ public class ModMergeTests
             PassGroups =
             {
                 Build.Group("Home", true, Build.Pass("Look", true, look)),
-                Build.FinalGroup("Weather", true, 1, Build.Pass("Humid", true, humid)),
+                Build.FinalGroup("Weather", true, Build.Pass("Humid", true, humid)),
             },
         };
 

@@ -32,7 +32,7 @@ A profile is a complete Lamina setup. Keep one per character (or per mood) and t
 (1) Create a profile or import one from the clipboard. (2) The On column: tick a profile to make it the active one, the dot marks which one is live. (3) Per-profile actions: edit, rename, duplicate, export to clipboard, delete.
 
 ### Pass groups and passes
-Inside a profile, looks are organized into **pass groups** and **passes**. Groups are checked top to bottom and the first group whose conditions match wins. Inside a group every matching pass contributes its layers, and lower passes override higher ones. A group marked **Final Pass** stops evaluation after it.
+Inside a profile, looks are organized into **pass groups** and **passes**. Groups are checked top to bottom and the first group whose conditions match wins. Inside a group every matching pass contributes its layers, and lower passes override higher ones. A group marked **Final Pass** sits in its own section below and is layered on top of whichever group won, so "take the helmet off while sitting" works no matter which look is active.
 
 ![The Passes tab: groups, passes, and the selected pass](images/readme/03-passes-overview.png)
 
@@ -42,7 +42,7 @@ A group can carry its own conditions, so a whole set of passes only exists while
 
 ![Pass group with group conditions](images/readme/04-pass-group.png)
 
-(1) The group is active now. (2) Final Pass: stop evaluating groups after this one. (3) Group conditions, which gate every pass inside the group.
+(1) The group is active now. (2) Final Pass: layer this group on top of the winning group instead of competing with it. (3) Group conditions, which gate every pass inside the group.
 
 ### Conditions
 Each pass (and each group) has a condition tree. Conditions combine with **All of** or **Any of**, can be negated with **Not**, and nest into sub-groups for anything more involved.

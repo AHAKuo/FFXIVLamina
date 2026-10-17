@@ -127,29 +127,75 @@ public sealed partial class LaminaWindow
 
     private void DrawGroupList(Profile profile)
     {
-        ImGui.TextUnformatted("Pass Groups");
-        ImGui.SameLine();
-        Widgets.Hint("first match wins");
-        Widgets.Tooltip("Normal groups are checked top to bottom; the first group whose conditions are true wins and the rest are skipped.\nFinal groups are layered on top afterwards, by priority.");
-        ImGui.SameLine(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX() - 60 * Widgets.Scale);
-        if (Widgets.IconButton(FontAwesomeIcon.Plus, "Add pass group"))
-        {
-            var g = _s.Profiles.AddGroup(profile);
-            Select(profile.Id, g.Id);
-            _s.Engine.Invalidate();
-        }
-        ImGui.Separator();
-
-        var report  = _livePreview?.Report;
-        var groups  = profile.PassGroups;
-        int? moveFrom = null, moveTo = null;
+        var groups = profile.PassGroups;
         Guid? remove = null, duplicate = null;
+        var moved = false;
 
         using var list = ImRaii.Child("##groupList", new Vector2(0, 0), false);
         if (!list)
             return;
-        for (var i = 0; i < groups.Count; i++)
+
+        DrawGroupSectionHeader(profile, "Pass Groups", "first match wins",
+            "Normal groups are checked top to bottom; the first group whose conditions are true wins and the rest are skipped.", isFinal: false);
+        if (!groups.Any(g => !g.IsFinal))
+            Widgets.Hint("No groups.");
+        moved |= DrawGroupRows(profile, isFinal: false, ref remove, ref duplicate);
+
+        ImGui.Spacing();
+        DrawGroupSectionHeader(profile, "Final Groups", "lower rows override",
+            "Final groups do not take part in the switch. Every final group whose conditions are true is layered on top of the winning group, top to bottom, so lower rows win.", isFinal: true);
+        if (!groups.Any(g => g.IsFinal))
+            Widgets.Hint("No final groups. A final group layers on top of whichever normal group wins, e.g. \"take the helmet off while sitting\".");
+        moved |= DrawGroupRows(profile, isFinal: true, ref remove, ref duplicate);
+
+        if (moved)
+            _s.Engine.Invalidate();
+        if (duplicate is { } d && _s.Profiles.DuplicateGroup(profile, d) is { } copy)
         {
+            Select(profile.Id, copy.Id);
+            _s.Engine.Invalidate();
+        }
+        if (remove is { } r && _s.Profiles.RemoveGroup(profile, r))
+        {
+            if (_groupId == r) Select(profile.Id);
+            _s.Engine.Invalidate();
+        }
+    }
+
+    private void DrawGroupSectionHeader(Profile profile, string title, string hint, string tooltip, bool isFinal)
+    {
+        ImGui.TextUnformatted(title);
+        ImGui.SameLine();
+        Widgets.Hint(hint);
+        Widgets.Tooltip(tooltip);
+        ImGui.SameLine(ImGui.GetContentRegionAvail().X + ImGui.GetCursorPosX() - 60 * Widgets.Scale);
+        using var id = ImRaii.PushId(isFinal ? "final" : "normal");
+        if (Widgets.IconButton(FontAwesomeIcon.Plus, isFinal ? "Add final group" : "Add pass group"))
+        {
+            var g = _s.Profiles.AddGroup(profile, isFinal: isFinal);
+            Select(profile.Id, g.Id);
+            _s.Engine.Invalidate();
+        }
+        ImGui.Separator();
+    }
+
+    /// <summary>
+    /// Draws the rows of one section (normal or final). Rows move only within their section: the list stays one ordered
+    /// list in the model, so "up" and "down" swap with the nearest group of the same kind.
+    /// </summary>
+    private bool DrawGroupRows(Profile profile, bool isFinal, ref Guid? remove, ref Guid? duplicate)
+    {
+        var report  = _livePreview?.Report;
+        var groups  = profile.PassGroups;
+        var indices = new List<int>();
+        for (var i = 0; i < groups.Count; i++)
+            if (groups[i].IsFinal == isFinal)
+                indices.Add(i);
+
+        int? moveFrom = null, moveTo = null;
+        for (var n = 0; n < indices.Count; n++)
+        {
+            var i = indices[n];
             var g = groups[i];
             using var id = ImRaii.PushId(g.Id.ToString());
             var enabled = g.Enabled;
@@ -163,12 +209,9 @@ public sealed partial class LaminaWindow
 
             var isActive = report is not null && (report.ActiveGroupId == g.Id || report.ActiveFinalGroupIds.Contains(g.Id));
             var selected = _groupId == g.Id;
-            var label    = g.Name;
-            if (g.IsFinal)
-                label += $"  [Final {g.Priority}]";
             using (ImRaii.PushColor(ImGuiCol.Text, isActive ? Widgets.Good : g.Enabled ? new Vector4(1, 1, 1, 1) : Widgets.Muted))
             {
-                if (ImGui.Selectable(label + "##sel", selected, ImGuiSelectableFlags.AllowDoubleClick, new Vector2(ImGui.GetContentRegionAvail().X - RowButtonsWidth(), 0)))
+                if (ImGui.Selectable(g.Name + "##sel", selected, ImGuiSelectableFlags.AllowDoubleClick, new Vector2(ImGui.GetContentRegionAvail().X - RowButtonsWidth(), 0)))
                 {
                     Select(profile.Id, g.Id);
                     if (ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
@@ -182,27 +225,16 @@ public sealed partial class LaminaWindow
                           + (g.Conditions.IsEmpty ? "\nNo conditions: always true" : ConditionsTrueNow(g.Conditions) ? "\nConditions: true" : "\nConditions: false"));
 
             ImGui.SameLine();
-            if (Widgets.IconButton(FontAwesomeIcon.ArrowUp, "Move up", i > 0)) { moveFrom = i; moveTo = i - 1; }
+            if (Widgets.IconButton(FontAwesomeIcon.ArrowUp, "Move up", n > 0)) { moveFrom = i; moveTo = indices[n - 1]; }
             ImGui.SameLine(0, 2);
-            if (Widgets.IconButton(FontAwesomeIcon.ArrowDown, "Move down", i < groups.Count - 1)) { moveFrom = i; moveTo = i + 1; }
+            if (Widgets.IconButton(FontAwesomeIcon.ArrowDown, "Move down", n < indices.Count - 1)) { moveFrom = i; moveTo = indices[n + 1]; }
             ImGui.SameLine(0, 2);
             if (Widgets.IconButton(FontAwesomeIcon.Clone, "Duplicate")) duplicate = g.Id;
             ImGui.SameLine(0, 2);
             if (Widgets.IconButton(FontAwesomeIcon.Trash, "Delete (hold Ctrl)", ImGui.GetIO().KeyCtrl)) remove = g.Id;
         }
 
-        if (moveFrom is { } f && moveTo is { } t && _s.Profiles.MoveGroup(profile, f, t))
-            _s.Engine.Invalidate();
-        if (duplicate is { } d && _s.Profiles.DuplicateGroup(profile, d) is { } copy)
-        {
-            Select(profile.Id, copy.Id);
-            _s.Engine.Invalidate();
-        }
-        if (remove is { } r && _s.Profiles.RemoveGroup(profile, r))
-        {
-            if (_groupId == r) Select(profile.Id);
-            _s.Engine.Invalidate();
-        }
+        return moveFrom is { } f && moveTo is { } t && _s.Profiles.MoveGroup(profile, f, t);
     }
 
     private void DrawGroupEditor(Profile profile, PassGroup group)
@@ -235,19 +267,7 @@ public sealed partial class LaminaWindow
             group.IsFinal = isFinal;
             Touch(profile);
         }
-        Widgets.Tooltip("Final groups do not take part in the switch. Every final group whose conditions are true is layered on top of the winning group, lowest priority first.");
-        if (group.IsFinal)
-        {
-            ImGui.SameLine();
-            var prio = group.Priority;
-            ImGui.SetNextItemWidth(110 * Widgets.Scale);
-            if (ImGui.InputInt("Priority##group", ref prio))
-            {
-                group.Priority = prio;
-                Touch(profile);
-            }
-            Widgets.Tooltip("Higher priority merges later and therefore wins.");
-        }
+        Widgets.Tooltip("Final groups do not take part in the switch. Every final group whose conditions are true is layered on top of the winning group, in list order: lower rows win.");
 
         ImGui.SameLine();
         DrawTransferButtons(profile, group, null);

@@ -143,11 +143,10 @@ public static class Build
             Passes     = passes.ToList(),
         };
 
-    public static PassGroup FinalGroup(string name, bool matches, int priority, params Pass[] passes)
+    public static PassGroup FinalGroup(string name, bool matches, params Pass[] passes)
     {
         var g = Group(name, matches, passes);
-        g.IsFinal  = true;
-        g.Priority = priority;
+        g.IsFinal = true;
         return g;
     }
 

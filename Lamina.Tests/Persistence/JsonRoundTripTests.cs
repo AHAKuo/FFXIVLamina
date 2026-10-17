@@ -24,7 +24,6 @@ public class JsonRoundTripTests
         Assert.Equal(33u, reloaded.Targets[1].WorldId);
         Assert.Equal(2, reloaded.PassGroups.Count);
         Assert.True(reloaded.PassGroups[1].IsFinal);
-        Assert.Equal(5, reloaded.PassGroups[1].Priority);
         Assert.False(reloaded.PassGroups[1].Enabled);
     }
 
@@ -301,14 +300,14 @@ public class JsonRoundTripTests
         // TDD 10.6 with real ids in place of the "…" placeholders.
         const string json = """
             {
-              "version": 1,
+              "version": 3,
               "id": "6f1c0000-0000-0000-0000-00000000aaaa",
               "name": "Main",
               "enabled": true,
               "targets": [ { "kind": "LocalPlayer" } ],
               "passGroups": [ {
                 "id": "6f1c0000-0000-0000-0000-00000000bbbb", "name": "Home",
-                "isFinal": false, "priority": 0,
+                "isFinal": false,
                 "conditions": { "op": "All", "children": [
                   { "kind": "Housing", "where": "OwnHouse" } ] },
                 "passes": [ {

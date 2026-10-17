@@ -188,4 +188,36 @@ public class JsonStoreTests
 
         Assert.Throws<InvalidOperationException>(() => Migrations.Upgrade(JObject.Parse("""{ "version": 1 }"""), FileKind.Biomes, 2, steps));
     }
+
+    [Fact]
+    public void ProfileV2ToV3_MovesFinalGroupsBehindNormalOnes_InOldPriorityOrder_AndDropsPriority()
+    {
+        // Final groups interleaved with normal ones, priorities 10 / 0 / 0 / 1 (one missing = 0). v2 merged them lowest
+        // priority first with ties in list order: B, D, C, A. v3 merges in list order, so that must become the list order.
+        var file = JObject.Parse("""
+            {
+              "version": 2,
+              "passGroups": [
+                { "name": "A", "isFinal": true,  "priority": 10 },
+                { "name": "N1", "isFinal": false, "priority": 0 },
+                { "name": "B", "isFinal": true,  "priority": 0 },
+                { "name": "N2", "priority": 7 },
+                { "name": "C", "isFinal": true,  "priority": 1 },
+                { "name": "D", "isFinal": true }
+              ]
+            }
+            """);
+
+        var result = Migrations.Upgrade(file, FileKind.Profile, 3, Migrations.Steps);
+
+        Assert.Equal(3, result.ToVersion);
+        var names = file["passGroups"]!.Select(g => g["name"]!.Value<string>()).ToArray();
+        Assert.Equal(new[] { "N1", "N2", "B", "D", "C", "A" }, names);
+        Assert.All(file["passGroups"]!, g => Assert.Null(g["priority"]));
+
+        // Loaded through the real deserializer the order is what the compositor walks.
+        var profile = JsonSettings.Deserialize<Profile>(file.ToString());
+        Assert.Equal(new[] { "B", "D", "C", "A" }, profile.PassGroups.Where(g => g.IsFinal).Select(g => g.Name));
+        Assert.Equal(new[] { "N1", "N2" }, profile.PassGroups.Where(g => !g.IsFinal).Select(g => g.Name));
+    }
 }

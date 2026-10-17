@@ -261,10 +261,14 @@ public sealed class ProfileStore
     // Pass groups
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary> Appends a new normal group. </summary>
-    public PassGroup AddGroup(Profile profile, string? name = null)
+    /// <summary> Appends a new group (normal, or final when <paramref name="isFinal"/>). </summary>
+    public PassGroup AddGroup(Profile profile, string? name = null, bool isFinal = false)
     {
-        var group = new PassGroup { Name = string.IsNullOrWhiteSpace(name) ? UniqueName("New Group", profile.PassGroups.Select(g => g.Name)) : name.Trim() };
+        var group = new PassGroup
+        {
+            Name    = string.IsNullOrWhiteSpace(name) ? UniqueName(isFinal ? "New Final Group" : "New Group", profile.PassGroups.Select(g => g.Name)) : name.Trim(),
+            IsFinal = isFinal,
+        };
         profile.PassGroups.Add(group);
         Touch(profile);
         return group;

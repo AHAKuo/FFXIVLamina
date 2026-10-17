@@ -133,26 +133,26 @@ public class PassCompositorTests
     }
 
     [Fact]
-    public void FinalGroupsLayerOnTopByPriority()
+    public void FinalGroupsLayerOnTopInListOrder()
     {
         var bridge = new FakeGlamourerBridge();
         var p = new Profile
         {
             PassGroups =
             {
+                Build.FinalGroup("FinalFirst", true, Build.Pass("first", true, Design(bridge, "First", 2, hair: 2))),
                 Build.Group("Normal",  true, Build.Pass("n", true, Design(bridge, "N", 1, hair: 1))),
-                Build.FinalGroup("FinalHi", true, 10, Build.Pass("hi", true, Design(bridge, "Hi", 3))),
-                Build.FinalGroup("FinalLo", true, 1, Build.Pass("lo", true, Design(bridge, "Lo", 2, hair: 2))),
-                Build.FinalGroup("FinalOff", false, 99, Build.Pass("off", true, Design(bridge, "Off", 9))),
+                Build.FinalGroup("FinalOff", false, Build.Pass("off", true, Design(bridge, "Off", 9))),
+                Build.FinalGroup("FinalLast", true, Build.Pass("last", true, Design(bridge, "Last", 3))),
             },
         };
 
         var (design, report) = Compose(p, bridge);
 
-        Assert.Equal(p.PassGroups[0].Id, design.ActiveGroupId);
-        Assert.Equal(new[] { p.PassGroups[2].Id, p.PassGroups[1].Id }, design.ActiveFinalGroupIds);
-        Assert.Equal(3ul, design.Items[EquipSlot.Head].Value.ItemId);                  // highest priority wins
-        Assert.Equal(2, design.Customize[CustomizeIndex.Hairstyle].Value);              // FinalLo over Normal
+        Assert.Equal(p.PassGroups[1].Id, design.ActiveGroupId);
+        Assert.Equal(new[] { p.PassGroups[0].Id, p.PassGroups[3].Id }, design.ActiveFinalGroupIds);
+        Assert.Equal(3ul, design.Items[EquipSlot.Head].Value.ItemId);                  // later final group wins
+        Assert.Equal(2, design.Customize[CustomizeIndex.Hairstyle].Value);              // FinalFirst over Normal, even though it is listed above it
         Assert.Equal(3, report.MatchedPassIds.Count);
     }
 
@@ -165,7 +165,7 @@ public class PassCompositorTests
             PassGroups =
             {
                 Build.Group("Normal", false, Build.Pass("n", true, Design(bridge, "N", 1))),
-                Build.FinalGroup("Final", true, 0, Build.Pass("f", true, Design(bridge, "F", 5))),
+                Build.FinalGroup("Final", true, Build.Pass("f", true, Design(bridge, "F", 5))),
             },
         };
 

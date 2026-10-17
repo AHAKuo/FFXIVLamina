@@ -17,7 +17,7 @@ public sealed record PreviewResult(
 
 /// <summary>
 /// Walks a profile against a snapshot and merges everything the matching passes want into one <see cref="VirtualDesign"/>.
-/// Implements TDD 5.9: first true normal group wins, then every true final group by priority; passes and layers are walked in
+/// Implements TDD 5.9: first true normal group wins, then every true final group in list order; passes and layers are walked in
 /// the evaluation direction and later merges override earlier ones (unset = passthrough).
 /// Macro Override masks are applied per layer, to Glamourer, Vitrine, Equipment and Appearance layers only, before the layer merges.
 /// </summary>
@@ -121,9 +121,9 @@ public sealed class PassCompositor
         if (active is not null)
             MergeGroup(active, draft, matched, skipped, resolver, direction, isTrue, snapshot);
 
-        // 2. Final groups: every true one, by priority (lower first, higher wins).
+        // 2. Final groups: every true one, in list order (later merges on top and wins).
         var finals = new List<Guid>();
-        foreach (var group in profile.PassGroups.Where(g => g.Enabled && g.IsFinal).OrderBy(g => g.Priority))
+        foreach (var group in profile.PassGroups.Where(g => g.Enabled && g.IsFinal))
         {
             if (!isTrue(group.Conditions))
                 continue;
