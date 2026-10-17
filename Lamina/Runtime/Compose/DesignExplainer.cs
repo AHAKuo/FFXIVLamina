@@ -58,6 +58,8 @@ public static class DesignExplainer
                 Line(sb, "Honorific", h.Value.Clear ? "clear" : $"\"{h.Value.Title}\" ({(h.Value.IsPrefix ? "prefix" : "suffix")})", h.Source);
             foreach (var (id, f) in d.Moodles.OrderBy(kv => kv.Key))
                 Line(sb, $"Moodle {id}", f.Value.ToString(), f.Source);
+            if (d.DecalCleanse is { } cleanse)
+                Line(sb, "Decal cleanse", d.Decals.Count == 0 ? "earlier decals removed; none after it" : $"earlier decals removed; {d.Decals.Count} after it", cleanse.Source);
             foreach (var f in d.Decals)
                 Line(sb, $"Decal {f.Value.ImageFile}", DescribeDecal(f.Value), f.Source);
             foreach (var group in d.CustomizePlusBones.GroupBy(kv => kv.Value.Source).OrderBy(g => g.Key.Note, StringComparer.Ordinal))

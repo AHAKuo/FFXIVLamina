@@ -143,6 +143,7 @@ public static class Fixtures
                 },
             },
             new DyeCleanseLayer { Collapsed = true },
+            new DecalCleanseLayer(),
             new EquipmentCleanseLayer { Enabled = false },
         };
 }

@@ -75,7 +75,7 @@ Each type has its own editor. The Job condition, for example, matches on jobs, r
 (1) Match on jobs, roles, disciplines or gearsets. (2) Level range. (3) Weapon drawn or sheathed. (4) Not inverts the condition; Hold and Linger delay the switch on and off.
 
 ### Layers
-A pass is a stack of layers, and lower layers override the ones above them. Layer types: Glamourer design, Equipment Changes, Equipment Cleanse, Dye Cleanse, Appearance Changes, Penumbra Adjust, Vitrine Design, Honorific, Moodles, Customize+, Simple Heels and Decal.
+A pass is a stack of layers, and lower layers override the ones above them. Layer types: Glamourer design, Equipment Changes, Equipment Cleanse, Dye Cleanse, Appearance Changes, Penumbra Adjust, Vitrine Design, Honorific, Moodles, Customize+, Simple Heels, Decal and Decal Cleanse.
 
 **Random Layers** is a second section under the layer stack. Only one of the layers in it is used, picked with equal chance each time the pass starts contributing, and it merges after the stack above. The pick stays until the pass stops contributing, so walking around or a weather change does not reshuffle it. Put one idle mod per layer there and a different idle plays each time the pass kicks in; "Roll again" in the section or `/lam reroll` picks anew.
 
@@ -178,6 +178,7 @@ Updates arrive through the same installer like any other plugin. The repository 
 - Random Layers section per pass: one of its layers is picked with equal chance each time the pass starts contributing (idle mod roulette), kept until the pass stops; `/lam reroll` or the section's button rolls anew.
 - Server info bar (DTR) entries, each optional: **Lamina: Reapply** (click = `/lam reapply`, tooltip shows the active profile and last apply time) and **Lamina: On / Off** (click flips the master toggle, muted when off). Right click on either opens Lamina.
 - Decal layer: a PNG or JPG placed on your character's skin by clicking it in the game world, with size, rotation and opacity; it is baked into the body or face texture and shown through a temporary Penumbra mod in the Lamina collection.
+- Decal Cleanse layer: removes every decal painted before it (earlier layers and passes); Decal layers after it still apply. Decals only accumulate without it.
 
 ## Virtual Designs
 A Virtual Design is a design created by combining multiple different rulesets and combining the resulting Glamourer, Honorific, Moodles, Customize+, Simple Heels and Penumbra statuses into one final design. This design is applied in one pass with efficient handling to prevent slow flickers or heavy condition swapping. The character is drawn ONCE after the virtual design is determined.

@@ -91,6 +91,19 @@ public sealed class DyeCleanseLayer : Layer
     public override string Describe() => "Dye cleanse";
 }
 
+/// <summary>
+/// Removes every decal that earlier layers and passes painted: the decal list is emptied where this layer merges, so only the
+/// Decal layers after it (in this pass or later passes) stay. Put it at the top of a pass to start from clean skin, or in a final
+/// group to strip all decals in some situation. Not maskable, like the Decal layer. Without this layer decals only accumulate.
+/// </summary>
+public sealed class DecalCleanseLayer : Layer
+{
+    public const string KindName = "DecalCleanse";
+    public override string Kind => KindName;
+
+    public override string Describe() => "Decal cleanse";
+}
+
 /// <summary> A Glamourer design by Guid. Its mod associations carry over as is. </summary>
 public sealed class GlamourerLayer : Layer
 {
@@ -476,6 +489,7 @@ public static class LayerKinds
         (CustomizePlusLayer.KindName,  "Customize+",         () => new CustomizePlusLayer()),
         (SimpleHeelsLayer.KindName,    "Simple Heels",       () => new SimpleHeelsLayer()),
         (DecalLayer.KindName,          "Decal",              () => new DecalLayer()),
+        (DecalCleanseLayer.KindName,   "Decal Cleanse",      () => new DecalCleanseLayer()),
     };
 
     /// <summary> Kinds whose contribution is filtered through the pass's Macro Override (they write Glamourer / mod fields). </summary>

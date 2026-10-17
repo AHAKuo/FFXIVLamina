@@ -76,6 +76,8 @@ public sealed class LayerResolver
                 return ResolveSimpleHeels(sh, source);
             case DecalLayer d:
                 return ResolveDecal(d, source, out skipReason);
+            case DecalCleanseLayer:
+                return new DesignDraft { DecalCleanse = new Field<bool>(true, source) };
             default:
                 skipReason = $"unsupported layer kind '{layer.Kind}'";
                 return null;

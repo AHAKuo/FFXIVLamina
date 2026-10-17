@@ -292,6 +292,14 @@ Simple Heels builds its `GetLocalPlayer` / `LocalChanged` report with `allowIpc 
       (force which emote config is active); `SetTag / GetTag / RemoveTag(int, string[, string])` + `TagChanged` event (free
       key/value store other plugins read). Not needed for v1.
 
+### Bugs (reported 2026-10-18, not fixed yet)
+- [ ] **Simple Heels height not refreshed on profile / pass switch.** Sometimes, when switching between profiles or
+      between passes, the character's height is not adjusted, or the old offset stays until something else triggers a
+      re-register. Suspects: the differ sees the heels section unchanged across the switch (same offset, different
+      source) and skips the IPC call while Simple Heels dropped the registration during cleanup; cleanup unregistering
+      after the new apply registered (order / debounce); relative mode reading a stale `GetLocalPlayer` base. Repro
+      and fix later; `/lam reapply` as the workaround.
+
 ### Shared
 - [ ] Bridges `ICustomizePlusBridge` / `ISimpleHeelsBridge` with fakes, availability tracking, JSON kinds, models, Add Layer
       entries, tests for cascade order, masks and cleanup.

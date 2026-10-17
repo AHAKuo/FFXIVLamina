@@ -547,6 +547,7 @@ internal sealed class LayerEditor
             CustomizePlusLayer.KindName    => DesignSection.CustomizePlus,
             SimpleHeelsLayer.KindName      => DesignSection.SimpleHeels,
             DecalLayer.KindName            => DesignSection.Decals,
+            DecalCleanseLayer.KindName     => DesignSection.Decals,
             _                              => null,
         };
 
@@ -565,6 +566,7 @@ internal sealed class LayerEditor
             CustomizePlusLayer.KindName  => (_s.CustomizePlus.Available, "Customize+ is not loaded."),
             SimpleHeelsLayer.KindName    => (_s.SimpleHeels.Available, "Simple Heels is not loaded."),
             DecalLayer.KindName          => (_s.Penumbra.Available && _s.DecalPicker is not null && _s.DecalPublisher is not null, "Penumbra is not loaded or the decal feature could not start."),
+            DecalCleanseLayer.KindName   => (_s.Penumbra.Available && _s.DecalPublisher is not null, "Penumbra is not loaded or the decal feature could not start."),
             _                            => (false, "Unsupported layer kind."),
         };
 
@@ -583,6 +585,7 @@ internal sealed class LayerEditor
             CustomizePlusLayer c  => CustomizePlusSummary(c),
             SimpleHeelsLayer sh   => DesignExplainer.DescribeHeels(new HeelsOffset(sh.Offset, sh.Relative)),
             DecalLayer d          => DecalSummary(d),
+            DecalCleanseLayer     => "removes every decal painted before it",
             _                     => layer.Describe(),
         };
 
@@ -627,6 +630,13 @@ internal sealed class LayerEditor
     private static bool DrawDyeCleanse()
     {
         Widgets.Hint("Clears dye 1 and dye 2 in every slot, weapons included. The items themselves are not changed.\nPut it after the outfit layers to strip their dyes, or before a dye-only Equipment Changes layer so only the dyes it sets remain.");
+        return false;
+    }
+
+    private static bool DrawDecalCleanse()
+    {
+        Widgets.Hint("Removes every decal that the layers above this one and the earlier passes painted. Decal layers after it (in this pass or in later passes) still apply.\n"
+                   + "Put it at the top of a pass to start from clean skin, or alone in a final group to strip all decals in some situation. Decals only accumulate without it.");
         return false;
     }
 
@@ -675,6 +685,7 @@ internal sealed class LayerEditor
             CustomizePlusLayer c  => DrawCustomizePlus(c),
             SimpleHeelsLayer sh   => DrawSimpleHeels(sh),
             DecalLayer d          => DrawDecal(profile, d),
+            DecalCleanseLayer     => DrawDecalCleanse(),
             UnknownLayer u        => DrawUnknown(u),
             _                     => false,
         };

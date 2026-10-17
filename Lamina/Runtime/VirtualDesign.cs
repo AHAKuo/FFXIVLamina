@@ -167,6 +167,12 @@ public sealed class DesignDraft
     public Dictionary<Guid, Field<MoodleOp>> Moodles { get; } = new();
     /// <summary> Decals in bake order: earlier entries are painted first, later ones land on top. Not maskable, like Honorific and Moodles. </summary>
     public List<Field<DecalSpec>> Decals { get; } = new();
+    /// <summary>
+    /// Set by a Decal Cleanse layer: when this draft merges on top of another, the other's decals are dropped first, so only the
+    /// decals of this draft (those after the cleanse) remain. Carried on through the merge so a cleansing pass also wipes the
+    /// passes before it. The source is the cleanse layer, for the explainer.
+    /// </summary>
+    public Field<bool>? DecalCleanse { get; set; }
     /// <summary> Customize+ bone name → edit. Merged per bone; applied as one temporary profile. Not maskable. </summary>
     public Dictionary<string, Field<CustomizePlusBone>> CustomizePlusBones { get; } = new(StringComparer.Ordinal);
     /// <summary> Simple Heels offset; later passes replace earlier ones. Not maskable. </summary>
@@ -175,7 +181,7 @@ public sealed class DesignDraft
     public bool IsEmpty
         => Items.Count == 0 && Stains.Count == 0 && Crests.Count == 0 && Bonus.Count == 0 && Customize.Count == 0
          && ModelId is null && Meta.Count == 0 && Parameters.Count == 0 && Materials.Count == 0 && Mods.Count == 0
-         && Honorific is null && Moodles.Count == 0 && Decals.Count == 0 && CustomizePlusBones.Count == 0 && SimpleHeels is null;
+         && Honorific is null && Moodles.Count == 0 && Decals.Count == 0 && DecalCleanse is null && CustomizePlusBones.Count == 0 && SimpleHeels is null;
 
     /// <summary> Adds a mod contribution, merging per part when the mod is already present. </summary>
     public void AddMod(ModContribution contribution)
@@ -201,7 +207,13 @@ public sealed class DesignDraft
         foreach (var (_, v) in top.Mods) AddMod(v);
         if (top.Honorific is { } title) Honorific = title;
         foreach (var (k, v) in top.Moodles) Moodles[k] = v;
-        // Decals accumulate instead of replacing: a later pass paints its decals on top of the earlier ones.
+        // Decals accumulate instead of replacing: a later pass paints its decals on top of the earlier ones. A Decal Cleanse in
+        // the top draft drops everything painted so far first; only the decals after the cleanse (top's own list) survive.
+        if (top.DecalCleanse is { } cleanse)
+        {
+            Decals.Clear();
+            DecalCleanse = cleanse;
+        }
         Decals.AddRange(top.Decals);
         foreach (var (k, v) in top.CustomizePlusBones) CustomizePlusBones[k] = v;
         if (top.SimpleHeels is { } heels) SimpleHeels = heels;
@@ -233,6 +245,7 @@ public sealed class DesignDraft
         if (Honorific is { } title) result.Honorific = title;
         foreach (var (k, v) in Moodles) result.Moodles[k] = v;
         result.Decals.AddRange(Decals);
+        result.DecalCleanse = DecalCleanse;
         foreach (var (k, v) in CustomizePlusBones) result.CustomizePlusBones[k] = v;
         if (SimpleHeels is { } heels) result.SimpleHeels = heels;
         return result;
@@ -255,6 +268,7 @@ public sealed class DesignDraft
         d.Honorific = design.Honorific;
         foreach (var (k, v) in design.Moodles) d.Moodles[k] = v;
         d.Decals.AddRange(design.Decals);
+        d.DecalCleanse = design.DecalCleanse;
         foreach (var (k, v) in design.CustomizePlusBones) d.CustomizePlusBones[k] = v;
         d.SimpleHeels = design.SimpleHeels;
         return d;
@@ -302,6 +316,7 @@ public sealed class VirtualDesign
         Honorific           = draft.Honorific;
         Moodles             = new Dictionary<Guid, Field<MoodleOp>>(draft.Moodles);
         Decals              = draft.Decals.ToList();
+        DecalCleanse        = draft.DecalCleanse;
         CustomizePlusBones  = new Dictionary<string, Field<CustomizePlusBone>>(draft.CustomizePlusBones, StringComparer.Ordinal);
         SimpleHeels         = draft.SimpleHeels;
         ProfileId           = profileId;
@@ -327,6 +342,11 @@ public sealed class VirtualDesign
     public IReadOnlyDictionary<Guid, Field<MoodleOp>> Moodles { get; }
     /// <summary> Decals in bake order (see <see cref="DesignDraft.Decals"/>). </summary>
     public IReadOnlyList<Field<DecalSpec>> Decals { get; }
+    /// <summary>
+    /// Set when a Decal Cleanse layer took part: <see cref="Decals"/> holds only what was painted after it. Informational (the
+    /// decal list already reflects the wipe), so it is not part of <see cref="ContentHash"/>; the explainer shows it.
+    /// </summary>
+    public Field<bool>? DecalCleanse { get; }
     /// <summary> Customize+ bone name → edit, the content of the temporary profile Lamina sets. </summary>
     public IReadOnlyDictionary<string, Field<CustomizePlusBone>> CustomizePlusBones { get; }
     /// <summary> Simple Heels offset to register, or null to leave Simple Heels alone. </summary>
@@ -356,7 +376,7 @@ public sealed class VirtualDesign
         => CustomizePlusBones.Count > 0;
 
     public bool IsEmpty
-        => !HasGlamourerContent && !HasMods && Honorific is null && Moodles.Count == 0 && !HasDecals && !HasCustomizePlus && SimpleHeels is null;
+        => !HasGlamourerContent && !HasMods && Honorific is null && Moodles.Count == 0 && !HasDecals && DecalCleanse is null && !HasCustomizePlus && SimpleHeels is null;
 }
 
 /// <summary>
