@@ -64,7 +64,7 @@ Each type has its own editor. The Job condition, for example, matches on jobs, r
 (1) Match on jobs, roles, disciplines or gearsets. (2) Level range. (3) Weapon drawn or sheathed. (4) Not inverts the condition; Hold and Linger delay the switch on and off.
 
 ### Layers
-A pass is a stack of layers, and lower layers override the ones above them. Layer types: Glamourer design, Equipment Changes, Equipment Cleanse, Appearance Changes, Penumbra Adjust, Vitrine Design, Honorific, Moodles, Customize+, Simple Heels and Decal.
+A pass is a stack of layers, and lower layers override the ones above them. Layer types: Glamourer design, Equipment Changes, Equipment Cleanse, Dye Cleanse, Appearance Changes, Penumbra Adjust, Vitrine Design, Honorific, Moodles, Customize+, Simple Heels and Decal.
 
 **Random Layers** is a second section under the layer stack. Only one of the layers in it is used, picked with equal chance each time the pass starts contributing, and it merges after the stack above. The pick stays until the pass stops contributing, so walking around or a weather change does not reshuffle it. Put one idle mod per layer there and a different idle plays each time the pass kicks in; "Roll again" in the section or `/lam reroll` picks anew.
 
@@ -163,6 +163,7 @@ Updates arrive through the same installer like any other plugin. The repository 
   Note: Customize+ does not report temporary profiles and Simple Heels does not report IPC registrations to Mare-style sync plugins, so other players do not see these two layers yet.
 - Vitrine integration (optional): use designs from the separate Vitrine plugin as layers, with a per-layer slot mask to combine pieces of several designs and a "clear other slots" switch.
 - Equipment Cleanse layer: empties every gear slot (weapons stay) so the outfit layers after it start from a bare body.
+- Dye Cleanse layer: clears dye 1 and dye 2 in every slot, weapons included, without touching the items.
 - Random Layers section per pass: one of its layers is picked with equal chance each time the pass starts contributing (idle mod roulette), kept until the pass stops; `/lam reroll` or the section's button rolls anew.
 - Decal layer: a PNG or JPG placed on your character's skin by clicking it in the game world, with size, rotation and opacity; it is baked into the body or face texture and shown through a temporary Penumbra mod in the Lamina collection.
 

@@ -142,6 +142,7 @@ public static class Fixtures
                     PartName   = "Left cheek",
                 },
             },
+            new DyeCleanseLayer { Collapsed = true },
             new EquipmentCleanseLayer { Enabled = false },
         };
 }

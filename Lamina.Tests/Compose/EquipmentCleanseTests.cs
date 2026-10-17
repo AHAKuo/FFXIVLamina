@@ -143,4 +143,58 @@ public class EquipmentCleanseTests
         Assert.IsType<EquipmentCleanseLayer>(layer);
         Assert.True(LayerKinds.IsMaskable(layer!));
     }
+
+    // ---- dye cleanse -----------------------------------------------------------------------------
+
+    [Fact]
+    public void DyeCleanse_ClearsBothDyesInEverySlot_WeaponsIncluded_AndLeavesItemsAlone()
+    {
+        var (design, report) = Compose(new FakeVitrineBridge(), new DyeCleanseLayer());
+
+        Assert.Empty(design.Items);
+        Assert.Equal(Enum.GetValues<EquipSlot>().Length, design.Stains.Count);
+        Assert.Contains(EquipSlot.MainHand, design.Stains.Keys);
+        Assert.Contains(EquipSlot.OffHand, design.Stains.Keys);
+        Assert.All(design.Stains.Values, f => Assert.Equal(new Stains(0, 0), f.Value));
+        Assert.Empty(report.SkippedLayers);
+    }
+
+    [Fact]
+    public void DyeCleanse_AfterAnOutfit_StripsItsDyes_AndALaterDyeWins()
+    {
+        var dyed = new EquipmentLayer();
+        dyed.Slots[EquipSlot.Body] = new SlotEdit { ItemId = 3001, ApplyStains = true, Stain1 = 5, Stain2 = 6 };
+        dyed.Slots[EquipSlot.Feet] = new SlotEdit { ItemId = 3003, ApplyStains = true, Stain1 = 7 };
+        var recolor = new EquipmentLayer();
+        recolor.Slots[EquipSlot.Feet] = new SlotEdit { ApplyStains = true, Stain1 = 9, Stain2 = 9 };
+
+        var (design, _) = Compose(new FakeVitrineBridge(), dyed, new DyeCleanseLayer(), recolor);
+
+        Assert.Equal(3001ul, design.Items[EquipSlot.Body].Value.ItemId);        // items untouched
+        Assert.Equal(3003ul, design.Items[EquipSlot.Feet].Value.ItemId);
+        Assert.Equal(new Stains(0, 0), design.Stains[EquipSlot.Body].Value);     // dyes stripped
+        Assert.Equal(new Stains(9, 9), design.Stains[EquipSlot.Feet].Value);     // later dye layer wins
+    }
+
+    [Fact]
+    public void DyeCleanse_IsMaskedByTheMacroOverride()
+    {
+        var bridge = new FakeGlamourerBridge();
+        var pass   = Build.Pass("p", true, new DyeCleanseLayer());
+        pass.MacroOverride = new ApplyMask { Equipment = EquipSlotFlags.Body | EquipSlotFlags.Legs };
+        var p = new Profile { PassGroups = { Build.Group("G", true, pass) } };
+
+        var (design, _) = _compositor.Compose(p, Snap, _eval, EvaluationDirection.TopToBottom, Build.Resolver(bridge, new FakeVitrineBridge()));
+
+        Assert.Equal(new[] { EquipSlot.Body, EquipSlot.Legs }.OrderBy(s => s), design.Stains.Keys.OrderBy(s => s));
+    }
+
+    [Fact]
+    public void DyeCleanse_RoundTripsThroughTheLayerRegistry()
+    {
+        var layer = LayerKinds.Create(DyeCleanseLayer.KindName);
+        Assert.IsType<DyeCleanseLayer>(layer);
+        Assert.True(LayerKinds.IsMaskable(layer!));
+        Assert.Equal("Dye cleanse", layer!.Describe());
+    }
 }

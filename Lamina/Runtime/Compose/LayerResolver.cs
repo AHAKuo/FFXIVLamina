@@ -62,6 +62,8 @@ public sealed class LayerResolver
                 return ResolveEquipment(e, source, out skipReason);
             case EquipmentCleanseLayer:
                 return ResolveCleanse(source);
+            case DyeCleanseLayer:
+                return ResolveDyeCleanse(source);
             case AppearanceLayer a:
                 return ResolveAppearance(a, source, out skipReason);
             case HonorificLayer h:
@@ -165,6 +167,15 @@ public sealed class LayerResolver
     {
         var draft = new DesignDraft();
         AddNothing(draft, source, keep: new HashSet<EquipSlot>());
+        return draft;
+    }
+
+    /// <summary> Dye cleanse: the dye pair 0 / 0 in every slot, weapons included; items are not touched. </summary>
+    private static DesignDraft ResolveDyeCleanse(Provenance source)
+    {
+        var draft = new DesignDraft();
+        foreach (var slot in Enum.GetValues<EquipSlot>())
+            draft.Stains[slot] = new Field<Stains>(new Stains(0, 0), source);
         return draft;
     }
 

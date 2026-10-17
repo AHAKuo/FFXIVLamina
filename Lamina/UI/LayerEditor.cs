@@ -506,6 +506,7 @@ internal sealed class LayerEditor
             GlamourerLayer.KindName      => (_s.Glamourer.Available, "Glamourer is not loaded."),
             EquipmentLayer.KindName      => (_s.Glamourer.Available, "Glamourer is not loaded."),
             EquipmentCleanseLayer.KindName => (_s.Glamourer.Available, "Glamourer is not loaded."),
+            DyeCleanseLayer.KindName     => (_s.Glamourer.Available, "Glamourer is not loaded."),
             AppearanceLayer.KindName     => (_s.Glamourer.Available, "Glamourer is not loaded."),
             PenumbraAdjustLayer.KindName => (_s.Penumbra.Available, "Penumbra is not loaded."),
             VitrineDesignLayer.KindName  => (_s.Vitrine.Available, "Vitrine is not installed (separate plugin)."),
@@ -525,6 +526,7 @@ internal sealed class LayerEditor
             PenumbraAdjustLayer p => $"{p.Mods.Count} mod(s)",
             EquipmentLayer e      => EquipmentSummary(e),
             EquipmentCleanseLayer => "empties every gear slot (weapons stay)",
+            DyeCleanseLayer       => "clears both dyes in every slot (items stay)",
             AppearanceLayer a     => AppearanceSummary(a),
             HonorificLayer h      => h.Clear ? "clear title" : string.IsNullOrEmpty(h.Title) ? "(no title)" : h.Title,
             MoodlesLayer m        => $"+{m.Add.Count + m.AddPresets.Count} / −{m.Remove.Count}",
@@ -572,6 +574,12 @@ internal sealed class LayerEditor
         return false;
     }
 
+    private static bool DrawDyeCleanse()
+    {
+        Widgets.Hint("Clears dye 1 and dye 2 in every slot, weapons included. The items themselves are not changed.\nPut it after the outfit layers to strip their dyes, or before a dye-only Equipment Changes layer so only the dyes it sets remain.");
+        return false;
+    }
+
     private string EquipmentSummary(EquipmentLayer e)
     {
         var parts = new List<string>();
@@ -610,6 +618,7 @@ internal sealed class LayerEditor
             PenumbraAdjustLayer p => DrawPenumbraAdjust(p),
             EquipmentLayer e      => DrawEquipment(e),
             EquipmentCleanseLayer => DrawCleanse(),
+            DyeCleanseLayer       => DrawDyeCleanse(),
             AppearanceLayer a     => DrawAppearance(a),
             HonorificLayer h      => DrawHonorific(h),
             MoodlesLayer m        => DrawMoodles(m),

@@ -78,6 +78,19 @@ public sealed class EquipmentCleanseLayer : Layer
     public override string Describe() => "Equipment cleanse";
 }
 
+/// <summary>
+/// Clears both dyes of every gear slot, weapons included, without touching the items: each slot gets the dye pair 0 / 0
+/// ("keep item, change dyes only"). Put it after the outfit layers to strip their dyes, or before a dye-only Equipment Changes
+/// layer so only the dyes it sets remain.
+/// </summary>
+public sealed class DyeCleanseLayer : Layer
+{
+    public const string KindName = "DyeCleanse";
+    public override string Kind => KindName;
+
+    public override string Describe() => "Dye cleanse";
+}
+
 /// <summary> A Glamourer design by Guid. Its mod associations carry over as is. </summary>
 public sealed class GlamourerLayer : Layer
 {
@@ -454,6 +467,7 @@ public static class LayerKinds
         (GlamourerLayer.KindName,      "Glamourer",          () => new GlamourerLayer()),
         (EquipmentLayer.KindName,      "Equipment Changes",  () => new EquipmentLayer()),
         (EquipmentCleanseLayer.KindName, "Equipment Cleanse", () => new EquipmentCleanseLayer()),
+        (DyeCleanseLayer.KindName,     "Dye Cleanse",        () => new DyeCleanseLayer()),
         (AppearanceLayer.KindName,     "Appearance Changes", () => new AppearanceLayer()),
         (PenumbraAdjustLayer.KindName, "Penumbra Adjust",    () => new PenumbraAdjustLayer()),
         (VitrineDesignLayer.KindName,  "Vitrine Design",     () => new VitrineDesignLayer()),
@@ -466,7 +480,7 @@ public static class LayerKinds
 
     /// <summary> Kinds whose contribution is filtered through the pass's Macro Override (they write Glamourer / mod fields). </summary>
     public static bool IsMaskable(Layer layer)
-        => layer is GlamourerLayer or VitrineDesignLayer or EquipmentLayer or EquipmentCleanseLayer or AppearanceLayer;
+        => layer is GlamourerLayer or VitrineDesignLayer or EquipmentLayer or EquipmentCleanseLayer or DyeCleanseLayer or AppearanceLayer;
 
     public static Layer? Create(string kind)
     {
