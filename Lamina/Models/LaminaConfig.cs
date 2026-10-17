@@ -42,6 +42,12 @@ public sealed class LaminaConfig
     /// automation. The full cleanup (master toggle off, unload, logout) reverts the same way. Absent in older config files = GameState.
     /// </summary>
     public NoRuleFallback NoRuleFallback { get; set; } = NoRuleFallback.GameState;
+
+    /// <summary> Server info bar (DTR) entry "Lamina Reapply": click re-evaluates and applies. Off by default. </summary>
+    public bool DtrReapply { get; set; }
+
+    /// <summary> Server info bar (DTR) entry "Lamina On/Off": shows the master toggle, click flips it. Off by default. </summary>
+    public bool DtrToggle { get; set; }
 }
 
 /// <summary> User overrides for the territory → biome mapping. Saved to biomes.json. </summary>

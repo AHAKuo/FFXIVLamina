@@ -6,6 +6,7 @@ using Dalamud.Plugin.Services;
 using Lamina.Decals;
 using Lamina.Decals.Mesh;
 using Lamina.Decals.Publish;
+using Lamina.Dtr;
 using Lamina.Ipc;
 using Lamina.Persistence;
 using Lamina.Runtime.Compose;
@@ -34,6 +35,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static ITextureReadbackProvider TextureReadback { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
+    [PluginService] internal static IDtrBar DtrBar { get; private set; } = null!;
 
     private readonly List<IDisposable> _disposables = new();
     private readonly WindowSystem _windowSystem = new("Lamina");
@@ -178,6 +180,8 @@ public sealed class Plugin : IDalamudPlugin
         _window = new LaminaWindow(Services);
         _window.RegisterWith(_windowSystem);
         Track(new Commands(Services, () => _window.Toggle()));
+        // Server info bar entries follow their Settings flags; nothing is shown until the user turns one on.
+        Track(new DtrEntries(DtrBar, Framework, engine, profiles, Log, OpenMainUi));
 
         // Dalamud hides plugin windows in group pose and cutscenes by default; layering looks while posing is the point.
         PluginInterface.UiBuilder.DisableGposeUiHide    = true;

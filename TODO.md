@@ -299,16 +299,20 @@ Simple Heels builds its `GetLocalPlayer` / `LocalChanged` report with `allowIpc 
       offset shows and clears; per-shoe offsets come back after unregister; neither plugin's own automation fights Lamina
       (document like the Glamourer note in section A if it does).
 
-## L) Server info bar (DTR) actions
+## L) Server info bar (DTR) actions — done 2026-10-17 (unverified in game, unreleased)
 Wanted 2026-10-16. Clickable entries in the Dalamud server info bar (`IDtrBar.Get("Lamina ...")`, `OnClick`), each one
 configurable on its own in Settings (show / hide per action; order follows the Dalamud DTR settings). Entries are disabled by
-default and only shown when the user turns them on.
-- [ ] **Reapply**: same as the Reapply button / `/lam reapply` (`Engine.RequestReapply()`); tooltip shows the last apply time
+default and only shown when the user turns them on. Implementation: `Dtr/DtrEntries.cs` (entries follow `LaminaConfig.DtrReapply`
+/ `DtrToggle` on a 250 ms framework tick and after every apply; texts in `Dtr/DtrText.cs`, unit-tested). Right click on either
+entry opens the window.
+- [x] **Reapply**: same as the Reapply button / `/lam reapply` (`Engine.RequestReapply()`); tooltip shows the last apply time
       and the active profile name.
-- [ ] **On / Off toggle**: flips `LaminaConfig.Enabled` (off runs the full cleanup, on re-applies), text shows the state
-      (e.g. "Lamina: On" / "Lamina: Off", muted color when off); tooltip explains what off does.
-- [ ] Settings → "Server info bar" section: one checkbox per action, hint that position / order is changed in Dalamud's own
+- [x] **On / Off toggle**: flips `LaminaConfig.Enabled` (off runs the full cleanup, on re-applies), text shows the state
+      ("Lamina: On" / "Lamina: Off", UIColor 3 when off); tooltip explains what off does.
+- [x] Settings → "Server info bar" section: one checkbox per action, hint that position / order is changed in Dalamud's own
       DTR settings. Entries are created / removed when the checkbox flips and removed on unload.
+- [ ] In-game check: entries appear / disappear with the checkboxes, clicks act, the muted colour of "Lamina: Off" reads well,
+      `IDtrBar.Get` title collision after a plugin reload is logged and retried (10 s) rather than thrown.
 - [ ] Later candidates, same pattern: profile switcher (left click cycles enabled profile, right click opens the window),
       current profile name display.
 

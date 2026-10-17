@@ -24,6 +24,8 @@ Off is a full cleanup, not a pause: Lamina's mod settings, the Glamourer state, 
 
 ![What turning Lamina off does](images/readme/21-lamina-off-tooltip.png)
 
+The switch and a Reapply action can also sit in the Dalamud server info bar: Settings → Server info bar has one checkbox per entry (both off by default). Left click acts, right click opens Lamina; where the entries sit in the bar is set in Dalamud's own Server Info Bar settings.
+
 ### Profiles: one per character
 A profile is a complete Lamina setup. Keep one per character (or per mood) and tick the one you want; enabling a profile disables the others for the same target. Profiles can be exported and imported from the clipboard, so you can share a whole character with a friend.
 
@@ -174,6 +176,7 @@ Updates arrive through the same installer like any other plugin. The repository 
 - Equipment Cleanse layer: empties every gear slot (weapons stay) so the outfit layers after it start from a bare body.
 - Dye Cleanse layer: clears dye 1 and dye 2 in every slot, weapons included, without touching the items.
 - Random Layers section per pass: one of its layers is picked with equal chance each time the pass starts contributing (idle mod roulette), kept until the pass stops; `/lam reroll` or the section's button rolls anew.
+- Server info bar (DTR) entries, each optional: **Lamina: Reapply** (click = `/lam reapply`, tooltip shows the active profile and last apply time) and **Lamina: On / Off** (click flips the master toggle, muted when off). Right click on either opens Lamina.
 - Decal layer: a PNG or JPG placed on your character's skin by clicking it in the game world, with size, rotation and opacity; it is baked into the body or face texture and shown through a temporary Penumbra mod in the Lamina collection.
 
 ## Virtual Designs

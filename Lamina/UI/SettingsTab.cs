@@ -113,6 +113,28 @@ public sealed partial class LaminaWindow
         Widgets.Tooltip("Mods associated with a Glamourer design are written into the Lamina collection when that design is layered.");
         ImGui.Spacing();
 
+        // ---- server info bar ----
+        ImGui.TextColored(Widgets.Accent, "Server info bar");
+        var dtrReapply = cfg.DtrReapply;
+        if (ImGui.Checkbox("Reapply entry", ref dtrReapply))
+        {
+            cfg.DtrReapply = dtrReapply;
+            _s.Profiles.MarkConfigDirty();
+        }
+        Widgets.Tooltip("Adds \"Lamina: Reapply\" to the server info bar. Left click re-evaluates and applies now (like /lam reapply); "
+                      + "the tooltip shows the active profile and the last apply time. Right click opens Lamina.");
+        ImGui.SameLine();
+        var dtrToggle = cfg.DtrToggle;
+        if (ImGui.Checkbox("On / Off entry", ref dtrToggle))
+        {
+            cfg.DtrToggle = dtrToggle;
+            _s.Profiles.MarkConfigDirty();
+        }
+        Widgets.Tooltip("Adds \"Lamina: On\" / \"Lamina: Off\" to the server info bar. Left click flips the master toggle (off runs the full cleanup, "
+                      + "on re-applies). Right click opens Lamina.");
+        Widgets.Hint("Position and order of the entries are set in Dalamud's own settings (Server Info Bar).");
+        ImGui.Spacing();
+
         // ---- integrations ----
         ImGui.TextColored(Widgets.Accent, "Integrations");
         using (var table = ImRaii.Table("##integrations", 3, ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.RowBg))
